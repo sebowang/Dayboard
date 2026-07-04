@@ -61,6 +61,82 @@ button {
   min-height: 100vh;
   place-items: center;
   padding: 40px;
+  background:
+    radial-gradient(circle at top left, rgba(87, 181, 214, 0.18), transparent 32%),
+    linear-gradient(180deg, #202632 0%, #171c25 100%);
+}
+
+.desktop-stage.theme-light {
+  --bg: oklch(96% 0.01 240);
+  --surface: oklch(96% 0.008 240 / 0.9);
+  --surface-strong: oklch(99% 0.004 240 / 0.98);
+  --surface-soft: oklch(92% 0.01 240 / 0.76);
+  --fg: oklch(22% 0.018 250);
+  --muted: oklch(48% 0.014 250);
+  --muted-strong: oklch(34% 0.016 250);
+  --border: oklch(18% 0.01 250 / 0.1);
+  --accent: oklch(58% 0.13 205);
+  --accent-soft: oklch(72% 0.08 200 / 0.2);
+  background:
+    radial-gradient(circle at top left, rgba(74, 156, 190, 0.14), transparent 32%),
+    linear-gradient(180deg, #edf3f6 0%, #dfe7ed 100%);
+}
+
+.theme-light .widget-shell,
+.theme-light .editor-sheet,
+.theme-light .settings-window,
+.theme-light .panel--glance-drawer {
+  background: rgba(246, 250, 252, var(--panel-opacity));
+  border-color: rgba(28, 46, 62, 0.1);
+  box-shadow: 0 24px 70px rgba(44, 64, 82, 0.18);
+}
+
+.theme-light .icon-button,
+.theme-light .view-switch,
+.theme-light .segmented,
+.theme-light .pin-options,
+.theme-light .calendar-cell,
+.theme-light .event-card,
+.theme-light .setting-card,
+.theme-light .account-card,
+.theme-light .search-box,
+.theme-light .field input,
+.theme-light .field select,
+.theme-light .field textarea,
+.theme-light .nav-item.is-active,
+.theme-light .sidebar-note,
+.theme-light .mini-preview {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(31, 52, 70, 0.1);
+}
+
+.theme-light .task-pill,
+.theme-light .calendar-cell__tasks em,
+.theme-light .preview-task {
+  color: var(--fg);
+  background: rgba(73, 156, 190, 0.12);
+  border-color: rgba(73, 156, 190, 0.16);
+}
+
+.theme-light .status-chip,
+.theme-light .meta-pill,
+.theme-light .ghost-button,
+.theme-light .action-button,
+.theme-light .secondary-action {
+  background: rgba(255, 255, 255, 0.76);
+  border-color: rgba(31, 52, 70, 0.1);
+}
+
+.widget-size-compact .widget-shell {
+  width: min(820px, calc(100vw - 48px));
+}
+
+.widget-size-standard .widget-shell {
+  width: min(1180px, calc(100vw - 48px));
+}
+
+.widget-size-wide .widget-shell {
+  width: min(1360px, calc(100vw - 48px));
 }
 
 .widget-shell {
@@ -448,6 +524,7 @@ button {
 }
 
 .ghost-button,
+.action-button,
 .primary-action,
 .secondary-action,
 .danger-action {
@@ -570,6 +647,21 @@ button {
   align-items: center;
   justify-content: flex-start;
   margin-top: 4px;
+}
+
+.toast {
+  position: fixed;
+  right: 28px;
+  bottom: 26px;
+  z-index: 80;
+  max-width: min(420px, calc(100vw - 40px));
+  padding: 11px 14px;
+  color: var(--fg);
+  background: color-mix(in oklab, var(--surface-strong) 92%, black 8%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  box-shadow: 0 18px 48px rgba(4, 8, 20, 0.26);
+  font-size: 13px;
 }
 
 .status-pill {

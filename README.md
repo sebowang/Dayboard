@@ -14,7 +14,8 @@ This repository currently contains an early local MVP prototype:
 - Click empty space in a day cell to create a task.
 - Drag a task or event between days to reschedule it.
 - Collapsible day task drawer.
-- Settings for opacity, default widget mode, and fixed-window mode.
+- Settings for opacity, default widget mode, widget size, theme preview, and fixed-window mode.
+- Panel buttons either perform a local action or show an explicit MVP-stage feedback message.
 - Low-emphasis Gmail / Outlook account entry placeholder for the later sync phase.
 - Local persistence with `localStorage` for tasks and settings.
 

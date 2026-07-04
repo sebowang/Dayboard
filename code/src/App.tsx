@@ -12,9 +12,12 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { DragEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type WidgetMode = "month" | "week" | "fortnight";
+type WidgetSize = "compact" | "standard" | "wide";
+type ThemeMode = "dark" | "light" | "system";
+type EffectiveTheme = "dark" | "light";
 type TaskState = "open" | "done";
 type ItemKind = "event" | "task";
 type CalendarName = "Local" | "Gmail" | "Outlook";
@@ -43,6 +46,8 @@ type AppSettings = {
   isGlanceOpen: boolean;
   opacity: number;
   pinMode: PinMode;
+  widgetSize: WidgetSize;
+  themeMode: ThemeMode;
 };
 
 type DragPayload = {
@@ -130,6 +135,8 @@ const defaultSettings: AppSettings = {
   isGlanceOpen: false,
   opacity: 88,
   pinMode: "desktop",
+  widgetSize: "standard",
+  themeMode: "dark",
 };
 
 const toneClass: Record<CalendarName, string> = {
@@ -211,6 +218,19 @@ const normalizeMode = (value: unknown): WidgetMode => {
   return defaultSettings.widgetMode;
 };
 
+const normalizeSize = (value: unknown): WidgetSize => {
+  if (value === "compact" || value === "standard" || value === "wide") return value;
+  return defaultSettings.widgetSize;
+};
+
+const normalizeTheme = (value: unknown): ThemeMode => {
+  if (value === "dark" || value === "light" || value === "system") return value;
+  return defaultSettings.themeMode;
+};
+
+const getSystemTheme = (): EffectiveTheme =>
+  window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
+
 const loadItems = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.items);
@@ -232,6 +252,8 @@ const loadSettings = () => {
       ...parsed,
       widgetMode: normalizeMode(parsed.widgetMode ?? parsed.widgetModePreference),
       isGlanceOpen: Boolean(parsed.isGlanceOpen ?? parsed.isTaskPanelOpen),
+      widgetSize: normalizeSize(parsed.widgetSize),
+      themeMode: normalizeTheme(parsed.themeMode),
     } as AppSettings;
   } catch {
     return defaultSettings;
@@ -276,10 +298,17 @@ function App() {
   const [isGlanceOpen, setIsGlanceOpen] = useState(initialSettings.isGlanceOpen);
   const [opacity, setOpacity] = useState(initialSettings.opacity);
   const [pinMode, setPinMode] = useState<PinMode>(initialSettings.pinMode);
+  const [widgetSize, setWidgetSize] = useState<WidgetSize>(initialSettings.widgetSize);
+  const [themeMode, setThemeMode] = useState<ThemeMode>(initialSettings.themeMode);
+  const [effectiveTheme, setEffectiveTheme] = useState<EffectiveTheme>(
+    initialSettings.themeMode === "system" ? getSystemTheme() : initialSettings.themeMode,
+  );
   const [desktopLocked, setDesktopLocked] = useState(true);
   const [autoStart, setAutoStart] = useState(false);
   const [mousePassthrough, setMousePassthrough] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [toast, setToast] = useState("");
+  const toastTimer = useRef<number | null>(null);
   const [retryMessage, setRetryMessage] = useState("Outlook 任务列表 16 分钟前同步失败，日历仍可正常显示。");
   const [syncOptions, setSyncOptions] = useState({
     calendar: true,
@@ -312,13 +341,38 @@ function App() {
   useEffect(() => {
     localStorage.setItem(
       STORAGE_KEYS.settings,
-      JSON.stringify({ widgetMode, isGlanceOpen, opacity, pinMode }),
+      JSON.stringify({ widgetMode, isGlanceOpen, opacity, pinMode, widgetSize, themeMode }),
     );
-  }, [widgetMode, isGlanceOpen, opacity, pinMode]);
+  }, [widgetMode, isGlanceOpen, opacity, pinMode, widgetSize, themeMode]);
 
   useEffect(() => {
     void applyPinMode(pinMode);
   }, [pinMode]);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (themeMode !== "system") {
+      setEffectiveTheme(themeMode);
+      return;
+    }
+
+    const media = window.matchMedia?.("(prefers-color-scheme: light)");
+    const syncTheme = () => setEffectiveTheme(getSystemTheme());
+    syncTheme();
+    media?.addEventListener("change", syncTheme);
+    return () => media?.removeEventListener("change", syncTheme);
+  }, [themeMode]);
+
+  const showNotice = (message: string) => {
+    setToast(message);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(""), 2200);
+  };
 
   const setDraftValue = <Key extends keyof DraftItem>(key: Key, value: DraftItem[Key]) => {
     setEditor((current) => {
@@ -394,6 +448,17 @@ function App() {
     });
   };
 
+  const movePeriod = (direction: -1 | 1) => {
+    if (widgetMode === "month") {
+      moveMonth(direction);
+      return;
+    }
+
+    const days = widgetMode === "week" ? 7 : 14;
+    const nextDate = formatDateKey(addDays(parseDateKey(selectedDate), direction * days));
+    selectDate(nextDate, false);
+  };
+
   const moveItemToDate = (itemId: string, nextDate: string) => {
     setBoardItems((current) =>
       current.map((item) => (item.id === itemId ? { ...item, date: nextDate } : item)),
@@ -438,8 +503,17 @@ function App() {
     setIsGlanceOpen(defaultSettings.isGlanceOpen);
     setOpacity(defaultSettings.opacity);
     setPinMode(defaultSettings.pinMode);
+    setWidgetSize(defaultSettings.widgetSize);
+    setThemeMode(defaultSettings.themeMode);
     setSelectedDate(todayKey);
     setCurrentMonth(parseDateKey(todayKey));
+    showNotice("已恢复示例数据和默认贴片设置");
+  };
+
+  const openAccountSettings = () => {
+    setSettingsTab("accounts");
+    setShowSettings(true);
+    showNotice("账号能力目前是 MVP 入口，真实 OAuth 会放到后续阶段。");
   };
 
   const renderItemChip = (item: DayboardItem, compact = false) => (
@@ -515,7 +589,7 @@ function App() {
 
   return (
     <main
-      className="desktop-stage"
+      className={`desktop-stage widget-size-${widgetSize} theme-${effectiveTheme}`}
       style={{ "--panel-opacity": opacity / 100 } as React.CSSProperties}
     >
       <section
@@ -542,10 +616,20 @@ function App() {
               >
                 <CalendarDays size={18} aria-hidden="true" />
               </button>
-              <button className="icon-button" type="button" aria-label="上一月" onClick={() => moveMonth(-1)}>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label={widgetMode === "month" ? "上一月" : widgetMode === "week" ? "上一周" : "上两周"}
+                onClick={() => movePeriod(-1)}
+              >
                 <ChevronLeft size={18} aria-hidden="true" />
               </button>
-              <button className="icon-button" type="button" aria-label="下一月" onClick={() => moveMonth(1)}>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label={widgetMode === "month" ? "下一月" : widgetMode === "week" ? "下一周" : "下两周"}
+                onClick={() => movePeriod(1)}
+              >
                 <ChevronRight size={18} aria-hidden="true" />
               </button>
               <div className="view-switch" role="tablist" aria-label="视图切换">
@@ -558,7 +642,10 @@ function App() {
                     key={mode}
                     type="button"
                     className={`view-switch__button ${widgetMode === mode ? "is-active" : ""}`}
-                    onClick={() => setWidgetMode(mode)}
+                    onClick={() => {
+                      setWidgetMode(mode);
+                      showNotice(`已切换到${label}视图`);
+                    }}
                     role="tab"
                     aria-selected={widgetMode === mode}
                   >
@@ -569,13 +656,21 @@ function App() {
               <button className="icon-button" type="button" aria-label="新建任务" onClick={() => openCreate()}>
                 <Plus size={18} aria-hidden="true" />
               </button>
-              <button className="icon-button" type="button" aria-label="日历连接状态">
+              <button className="icon-button" type="button" aria-label="日历连接状态" onClick={openAccountSettings}>
                 <Link2 size={18} aria-hidden="true" />
               </button>
               <button className="icon-button" type="button" aria-label="打开设置" onClick={() => setShowSettings(true)}>
                 <Settings size={18} aria-hidden="true" />
               </button>
-              <button className="icon-button" type="button" aria-label="隐藏到托盘" onClick={hideWindow}>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="隐藏到托盘"
+                onClick={() => {
+                  showNotice("桌面壳中会隐藏到托盘；浏览器预览会显示提示。");
+                  void hideWindow();
+                }}
+              >
                 <X size={18} aria-hidden="true" />
               </button>
             </div>
@@ -682,6 +777,12 @@ function App() {
           </section>
         )}
       </section>
+
+      {toast && (
+        <div className="toast" role="status" aria-live="polite">
+          {toast}
+        </div>
+      )}
 
       {editor && (
         <div className="editor-backdrop" role="presentation">
@@ -861,7 +962,11 @@ function App() {
                       disabled={syncing}
                       onClick={() => {
                         setSyncing(true);
-                        window.setTimeout(() => setSyncing(false), 900);
+                        showNotice("正在模拟手动同步；真实账号同步会在后续 OAuth 阶段接入。");
+                        window.setTimeout(() => {
+                          setSyncing(false);
+                          showNotice("同步请求已完成模拟。");
+                        }, 900);
                       }}
                     >
                       {syncing ? "Syncing..." : "手动同步"}
@@ -907,7 +1012,13 @@ function App() {
                           <span className="meta-pill">Optional</span>
                         </div>
                       </div>
-                      <button className="action-button" type="button">连接</button>
+                      <button
+                        className="action-button"
+                        type="button"
+                        onClick={() => showNotice("ICS / Apple Calendar 是后续订阅入口，当前 MVP 暂不连接真实账号。")}
+                      >
+                        连接
+                      </button>
                     </article>
                   </div>
 
@@ -926,7 +1037,10 @@ function App() {
                           type="button"
                           aria-pressed={syncOptions[key]}
                           aria-label={`切换${title}`}
-                          onClick={() => setSyncOptions((current) => ({ ...current, [key]: !current[key] }))}
+                          onClick={() => {
+                            setSyncOptions((current) => ({ ...current, [key]: !current[key] }));
+                            showNotice(`${title}同步范围已更新。`);
+                          }}
                         />
                       </div>
                     ))}
@@ -939,7 +1053,11 @@ function App() {
                       type="button"
                       onClick={() => {
                         setRetryMessage("正在重新同步 Outlook 任务列表。");
-                        window.setTimeout(() => setRetryMessage("Outlook 任务列表已重新进入同步队列。"), 800);
+                        showNotice("正在重试 Outlook 任务列表同步。");
+                        window.setTimeout(() => {
+                          setRetryMessage("Outlook 任务列表已重新进入同步队列。");
+                          showNotice("Outlook 任务列表已进入同步队列。");
+                        }, 800);
                       }}
                     >
                       重试
@@ -972,7 +1090,10 @@ function App() {
                               key={mode}
                               type="button"
                               className={widgetMode === mode ? "is-active" : ""}
-                              onClick={() => setWidgetMode(mode)}
+                              onClick={() => {
+                                setWidgetMode(mode);
+                                showNotice(`默认视图已设为${label}。`);
+                              }}
                             >
                               {label}
                             </button>
@@ -987,9 +1108,23 @@ function App() {
                       <div className="settings-row">
                         <div className="row-copy"><strong>尺寸档位</strong><span>标准尺寸用于首版参考。</span></div>
                         <div className="segmented" aria-label="贴片尺寸">
-                          <button type="button">紧凑</button>
-                          <button className="is-active" type="button">标准</button>
-                          <button type="button">宽</button>
+                          {([
+                            ["compact", "紧凑"],
+                            ["standard", "标准"],
+                            ["wide", "宽"],
+                          ] as const).map(([size, label]) => (
+                            <button
+                              key={size}
+                              className={widgetSize === size ? "is-active" : ""}
+                              type="button"
+                              onClick={() => {
+                                setWidgetSize(size);
+                                showNotice(`贴片尺寸已切换为${label}。`);
+                              }}
+                            >
+                              {label}
+                            </button>
+                          ))}
                         </div>
                       </div>
                     </section>
@@ -1004,7 +1139,10 @@ function App() {
                         type="button"
                         aria-pressed={desktopLocked}
                         aria-label="切换锁定在桌面"
-                        onClick={() => setDesktopLocked((current) => !current)}
+                        onClick={() => {
+                          setDesktopLocked((current) => !current);
+                          showNotice("锁定桌面状态已更新；真实窗口锁定需要在 Tauri 壳验证。");
+                        }}
                       />
                     </div>
                     <div className="settings-row">
@@ -1014,7 +1152,10 @@ function App() {
                         type="button"
                         aria-pressed={autoStart}
                         aria-label="切换开机启动"
-                        onClick={() => setAutoStart((current) => !current)}
+                        onClick={() => {
+                          setAutoStart((current) => !current);
+                          showNotice("开机启动只是界面状态，后续会接 Tauri autostart 插件。");
+                        }}
                       />
                     </div>
                     <div className="settings-row">
@@ -1029,7 +1170,10 @@ function App() {
                             key={mode}
                             type="button"
                             className={pinMode === mode ? "is-active" : ""}
-                            onClick={() => setPinMode(mode)}
+                            onClick={() => {
+                              setPinMode(mode);
+                              showNotice(`固定方式已切换为${label}。`);
+                            }}
                           >
                             {label}
                           </button>
@@ -1043,7 +1187,10 @@ function App() {
                         type="button"
                         aria-pressed={mousePassthrough}
                         aria-label="切换鼠标穿透"
-                        onClick={() => setMousePassthrough((current) => !current)}
+                        onClick={() => {
+                          setMousePassthrough((current) => !current);
+                          showNotice("鼠标穿透是后续桌面壳能力，当前先记录设置意图。");
+                        }}
                       />
                     </div>
                   </section>
@@ -1068,9 +1215,23 @@ function App() {
                       <div className="settings-row">
                         <div className="row-copy"><strong>主题</strong><span>首版推荐跟随深色贴片系统。</span></div>
                         <div className="segmented" aria-label="主题">
-                          <button className="is-active" type="button">深色</button>
-                          <button type="button">浅色</button>
-                          <button type="button">跟随系统</button>
+                          {([
+                            ["dark", "深色"],
+                            ["light", "浅色"],
+                            ["system", "跟随系统"],
+                          ] as const).map(([mode, label]) => (
+                            <button
+                              key={mode}
+                              className={themeMode === mode ? "is-active" : ""}
+                              type="button"
+                              onClick={() => {
+                                setThemeMode(mode);
+                                showNotice(`主题已切换为${label}。`);
+                              }}
+                            >
+                              {label}
+                            </button>
+                          ))}
                         </div>
                       </div>
                     </section>
@@ -1084,7 +1245,14 @@ function App() {
                       </div>
                       <div className="settings-row">
                         <div className="row-copy"><strong>展开方式</strong><span>日历 icon 触发，月 / 周 / 双周一致。</span></div>
-                        <button className="action-button" type="button" onClick={() => setIsGlanceOpen((current) => !current)}>
+                        <button
+                          className="action-button"
+                          type="button"
+                          onClick={() => {
+                            setIsGlanceOpen((current) => !current);
+                            showNotice(isGlanceOpen ? "任务面板预览已隐藏。" : "任务面板预览已展开。");
+                          }}
+                        >
                           {isGlanceOpen ? "隐藏任务面板" : "展开任务面板"}
                         </button>
                       </div>

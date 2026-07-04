@@ -14,9 +14,9 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { DragEvent, FormEvent, useEffect, useMemo, useState } from "react";
 
-type ViewMode = "month" | "week" | "day";
+type WidgetMode = "biweek" | "summary" | "month";
 type TaskState = "open" | "done";
 type ItemKind = "event" | "task";
 type CalendarName = "Local" | "Work" | "Focus";
@@ -42,11 +42,17 @@ type EditorState =
   | null;
 
 type AppSettings = {
-  viewMode: ViewMode;
+  widgetMode: WidgetMode;
+  widgetModePreference: WidgetMode | "auto";
   isTaskPanelOpen: boolean;
   opacity: number;
   pinMode: PinMode;
   toolRailSide: ToolRailSide;
+};
+
+type DragPayload = {
+  itemId: string;
+  sourceDate: string;
 };
 
 const seedItems: DayboardItem[] = [
@@ -121,11 +127,12 @@ const seedItems: DayboardItem[] = [
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
 const STORAGE_KEYS = {
   items: "dayboard.items.v1",
-  settings: "dayboard.settings.v1",
+  settings: "dayboard.settings.v2",
 };
 
 const defaultSettings: AppSettings = {
-  viewMode: "month",
+  widgetMode: "biweek",
+  widgetModePreference: "auto",
   isTaskPanelOpen: false,
   opacity: 92,
   pinMode: "desktop",
@@ -171,6 +178,14 @@ const getMonthDates = (monthDate: Date) => {
 const formatMonthTitle = (date: Date) =>
   `${date.getFullYear()} 年 ${date.getMonth() + 1} 月`;
 
+const getBiweekDates = (monthDate: Date) => {
+  const monthDates = getMonthDates(monthDate);
+  const todayIndex = monthDates.findIndex((date) => formatDateKey(date) === todayKey);
+  const anchorIndex = todayIndex >= 0 ? todayIndex : 14;
+  const startIndex = Math.max(0, Math.min(monthDates.length - 14, anchorIndex - (anchorIndex % 7)));
+  return monthDates.slice(startIndex, startIndex + 14);
+};
+
 const loadItems = () => {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.items);
@@ -197,6 +212,10 @@ const formatItemTime = (item: DayboardItem | DraftItem) => {
   if (item.start) return item.start;
   return "全天";
 };
+
+const isCompactWidget = () => window.innerWidth < 1160;
+
+const getAutoWidgetMode = () => (isCompactWidget() ? "summary" : "biweek");
 
 async function hideWindow() {
   try {
@@ -226,7 +245,12 @@ async function applyPinMode(mode: PinMode) {
 
 function App() {
   const [settings, setSettings] = useState<AppSettings>(loadSettings);
-  const [viewMode, setViewMode] = useState<ViewMode>(settings.viewMode);
+  const [widgetModePreference, setWidgetModePreference] = useState<AppSettings["widgetModePreference"]>(
+    settings.widgetModePreference,
+  );
+  const [widgetMode, setWidgetMode] = useState<WidgetMode>(
+    settings.widgetModePreference === "auto" ? getAutoWidgetMode() : settings.widgetMode,
+  );
   const [selectedDate, setSelectedDate] = useState(todayKey);
   const [currentMonth, setCurrentMonth] = useState(() => new Date());
   const [query, setQuery] = useState("");
@@ -237,8 +261,11 @@ function App() {
   const [opacity, setOpacity] = useState(settings.opacity);
   const [pinMode, setPinMode] = useState<PinMode>(settings.pinMode);
   const [toolRailSide, setToolRailSide] = useState<ToolRailSide>(settings.toolRailSide);
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
+  const [dropTargetDate, setDropTargetDate] = useState<string | null>(null);
 
   const monthDates = useMemo(() => getMonthDates(currentMonth), [currentMonth]);
+  const biweekDates = useMemo(() => getBiweekDates(currentMonth), [currentMonth]);
   const monthTitle = useMemo(() => formatMonthTitle(currentMonth), [currentMonth]);
 
   useEffect(() => {
@@ -246,14 +273,31 @@ function App() {
   }, [boardItems]);
 
   useEffect(() => {
-    const nextSettings = { viewMode, isTaskPanelOpen, opacity, pinMode, toolRailSide };
+    const nextSettings = {
+      widgetMode,
+      widgetModePreference,
+      isTaskPanelOpen,
+      opacity,
+      pinMode,
+      toolRailSide,
+    };
     setSettings(nextSettings);
     localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(nextSettings));
-  }, [viewMode, isTaskPanelOpen, opacity, pinMode, toolRailSide]);
+  }, [widgetMode, widgetModePreference, isTaskPanelOpen, opacity, pinMode, toolRailSide]);
 
   useEffect(() => {
     void applyPinMode(pinMode);
   }, [pinMode]);
+
+  useEffect(() => {
+    const syncWidgetMode = () => {
+      setWidgetMode((current) => (widgetModePreference === "auto" ? getAutoWidgetMode() : current));
+    };
+
+    syncWidgetMode();
+    window.addEventListener("resize", syncWidgetMode);
+    return () => window.removeEventListener("resize", syncWidgetMode);
+  }, [widgetModePreference]);
 
   const selectedItems = useMemo(
     () =>
@@ -265,6 +309,23 @@ function App() {
         })
         .sort((a, b) => a.start.localeCompare(b.start)),
     [boardItems, query, selectedDate],
+  );
+
+  const todayItems = useMemo(
+    () =>
+      boardItems
+        .filter((item) => item.date === todayKey)
+        .sort((a, b) => a.start.localeCompare(b.start)),
+    [boardItems],
+  );
+
+  const upcomingItems = useMemo(
+    () =>
+      boardItems
+        .filter((item) => item.date >= todayKey && item.state === "open")
+        .sort((a, b) => `${a.date}-${a.start}`.localeCompare(`${b.date}-${b.start}`))
+        .slice(0, 5),
+    [boardItems],
   );
 
   const visibleMonthItems = (dateKey: string) => boardItems.filter((item) => item.date === dateKey);
@@ -341,9 +402,68 @@ function App() {
     });
   };
 
+  const moveItemToDate = (itemId: string, nextDate: string) => {
+    setBoardItems((current) =>
+      current.map((item) => (item.id === itemId ? { ...item, date: nextDate } : item)),
+    );
+    setSelectedDate(nextDate);
+  };
+
+  const beginDragItem = (event: DragEvent<HTMLElement>, itemId: string, sourceDate: string) => {
+    const payload: DragPayload = { itemId, sourceDate };
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/dayboard-item", JSON.stringify(payload));
+    event.dataTransfer.setData("text/plain", itemId);
+    setDraggingItemId(itemId);
+    setDropTargetDate(sourceDate);
+  };
+
+  const endDragItem = () => {
+    setDraggingItemId(null);
+    setDropTargetDate(null);
+  };
+
+  const allowDropOnDate = (event: DragEvent<HTMLElement>, dateKey: string) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (dropTargetDate !== dateKey) {
+      setDropTargetDate(dateKey);
+    }
+  };
+
+  const leaveDropDate = (dateKey: string) => {
+    setDropTargetDate((current) => (current === dateKey ? null : current));
+  };
+
+  const dropItemOnDate = (event: DragEvent<HTMLElement>, dateKey: string) => {
+    event.preventDefault();
+    const raw = event.dataTransfer.getData("application/dayboard-item");
+    if (!raw) {
+      endDragItem();
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(raw) as DragPayload;
+      if (payload.itemId) {
+        moveItemToDate(payload.itemId, dateKey);
+      }
+    } catch {
+      // ignore invalid drag payload
+    }
+
+    endDragItem();
+  };
+
+  const changeWidgetMode = (mode: WidgetMode) => {
+    setWidgetMode(mode);
+    setWidgetModePreference(mode);
+  };
+
   const resetLocalData = () => {
     setBoardItems(seedItems);
-    setViewMode(defaultSettings.viewMode);
+    setWidgetModePreference(defaultSettings.widgetModePreference);
+    setWidgetMode(getAutoWidgetMode());
     setIsTaskPanelOpen(defaultSettings.isTaskPanelOpen);
     setOpacity(defaultSettings.opacity);
     setPinMode(defaultSettings.pinMode);
@@ -396,9 +516,231 @@ function App() {
         </button>
       </header>
 
-      <section className={`board-layout ${isTaskPanelOpen ? "task-open" : "task-collapsed"}`}>
+      <section className="widget-bar" aria-label="桌面贴片模式切换">
+        <div className="segment-wrap">
+          <div className="segmented widget-segment" role="tablist" aria-label="贴片模式">
+            {([
+              ["biweek", "双周"],
+              ["summary", "摘要"],
+              ["month", "月"],
+            ] as const).map(([mode, label]) => (
+              <button
+                key={mode}
+                type="button"
+                className={widgetMode === mode ? "active" : ""}
+                onClick={() => changeWidgetMode(mode)}
+                role="tab"
+                aria-selected={widgetMode === mode}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="widget-status">
+            <span className="eyebrow">桌面贴片</span>
+            <strong>{widgetMode === "biweek" ? "宽态双周" : widgetMode === "summary" ? "窄态摘要" : "月视图"}</strong>
+            <span className="widget-status-note">
+              {widgetModePreference === "auto"
+                ? `自动 · ${isCompactWidget() ? "当前窄窗默认摘要" : "当前宽窗默认双周"}`
+                : `已固定 · ${widgetMode === "month" ? "月视图" : widgetMode === "summary" ? "摘要" : "双周"}`}
+            </span>
+          </div>
+          <button className="account-status" type="button" aria-label="账号连接状态">
+            <i aria-hidden="true" />
+            <span>
+              <strong>Gmail · Outlook</strong>
+              <small>连接入口</small>
+            </span>
+          </button>
+        </div>
+      </section>
+
+      <section className={`board-layout widget-mode-${widgetMode} ${isTaskPanelOpen ? "task-open" : "task-collapsed"}`}>
         <section className="calendar-panel" aria-label="日历">
-          {viewMode === "month" && (
+          {widgetMode === "summary" ? (
+            <div className="widget-summary">
+              <section className="summary-hero">
+                <span className="eyebrow">今天</span>
+                <strong>{selectedDate === todayKey ? "今日焦点" : selectedDate}</strong>
+                <p>{todayItems.length ? `还有 ${todayItems.filter((item) => item.state === "open").length} 项待完成` : "今天还没有安排，可以直接点空白新增。"}</p>
+              </section>
+
+              <section className="summary-block">
+                <div className="summary-block-head">
+                  <span className="eyebrow">今日任务</span>
+                  <button className="mini-link" type="button" onClick={() => openCreate(todayKey)}>
+                    快速新增
+                  </button>
+                </div>
+                <div className="summary-list">
+                  {todayItems.length ? (
+                    todayItems.slice(0, 3).map((item) => (
+                      <article
+                        key={item.id}
+                        className={`summary-item ${calendarTone[item.calendar]} ${item.state === "done" ? "done" : ""}`}
+                        draggable
+                        onDragStart={(event) => beginDragItem(event, item.id, item.date)}
+                        onDragEnd={endDragItem}
+                      >
+                        <button className="state-button" type="button" onClick={() => toggleDone(item.id)}>
+                          {item.state === "done" ? <Check size={15} aria-hidden="true" /> : <Circle size={15} aria-hidden="true" />}
+                        </button>
+                        <button type="button" className="summary-item-content" onClick={() => openEdit(item)}>
+                          <strong>{item.title}</strong>
+                          <span>{formatItemTime(item)}</span>
+                        </button>
+                      </article>
+                    ))
+                  ) : (
+                    <button type="button" className="empty-day summary-empty" onClick={() => openCreate(todayKey)}>
+                      今日暂无安排，点此新增
+                    </button>
+                  )}
+                </div>
+              </section>
+
+              <section className="summary-block">
+                <div className="summary-block-head">
+                  <span className="eyebrow">本周接下来</span>
+                </div>
+                <div className="summary-list compact">
+                  {upcomingItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      draggable
+                      className={`summary-next ${calendarTone[item.calendar]} ${draggingItemId === item.id ? "dragging" : ""}`}
+                      onDragStart={(event) => beginDragItem(event, item.id, item.date)}
+                      onDragEnd={endDragItem}
+                      onClick={() => openEdit(item)}
+                    >
+                      <strong>{item.title}</strong>
+                      <span>{item.date} · {formatItemTime(item)}</span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            </div>
+          ) : (
+            <>
+              {widgetMode === "biweek" && (
+                <div className="biweek-board">
+              <div className="biweek-grid biweek-grid-compact">
+                {weekdays.map((day) => (
+                  <span key={`week-a-${day}`} className="weekday biweek-weekday">
+                    周{day}
+                  </span>
+                ))}
+                {biweekDates.slice(0, 7).map((date) => {
+                  const key = formatDateKey(date);
+                  const dateItems = visibleMonthItems(key);
+                  return (
+                    <div
+                      key={key}
+                      className={`biweek-day ${key === selectedDate ? "selected" : ""} ${
+                        key === todayKey ? "today" : ""
+                      } ${dropTargetDate === key ? "drop-target" : ""}`}
+                      onDragOver={(event) => allowDropOnDate(event, key)}
+                      onDragLeave={() => leaveDropDate(key)}
+                      onDrop={(event) => dropItemOnDate(event, key)}
+                    >
+                      <button
+                        type="button"
+                        className="week-day-head"
+                        onClick={() => setSelectedDate(key)}
+                        aria-label={`${date.getMonth() + 1} 月 ${date.getDate()} 日`}
+                      >
+                        <strong>{date.getMonth() + 1}/{date.getDate()}</strong>
+                        <small>{dateItems.length ? `${dateItems.length} 项` : "空"}</small>
+                      </button>
+                      <div className="calendar-items">
+                        {dateItems.slice(0, 3).map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            draggable
+                            className={`calendar-chip ${calendarTone[item.calendar]} ${
+                              item.state === "done" ? "done" : ""
+                            } ${draggingItemId === item.id ? "dragging" : ""}`}
+                            onDragStart={(event) => beginDragItem(event, item.id, item.date)}
+                            onDragEnd={endDragItem}
+                            onClick={() => openEdit(item)}
+                          >
+                            <span>{item.start || (item.kind === "task" ? "待办" : "全天")}</span>
+                            {item.title}
+                          </button>
+                        ))}
+                        {dateItems.length > 3 && <span className="more-count">+{dateItems.length - 3}</span>}
+                      </div>
+                      <button
+                        type="button"
+                        className="blank-create"
+                        onClick={() => openCreate(key)}
+                        aria-label={`${date.getMonth() + 1} 月 ${date.getDate()} 日新增任务`}
+                      />
+                    </div>
+                  );
+                })}
+                {weekdays.map((day) => (
+                  <span key={`week-b-${day}`} className="weekday biweek-weekday biweek-week-label">
+                    周{day}
+                  </span>
+                ))}
+                {biweekDates.slice(7, 14).map((date) => {
+                  const key = formatDateKey(date);
+                  const dateItems = visibleMonthItems(key);
+                  return (
+                    <div
+                      key={key}
+                      className={`biweek-day ${key === selectedDate ? "selected" : ""} ${
+                        key === todayKey ? "today" : ""
+                      } ${dropTargetDate === key ? "drop-target" : ""}`}
+                      onDragOver={(event) => allowDropOnDate(event, key)}
+                      onDragLeave={() => leaveDropDate(key)}
+                      onDrop={(event) => dropItemOnDate(event, key)}
+                    >
+                      <button
+                        type="button"
+                        className="week-day-head"
+                        onClick={() => setSelectedDate(key)}
+                        aria-label={`${date.getMonth() + 1} 月 ${date.getDate()} 日`}
+                      >
+                        <strong>{date.getMonth() + 1}/{date.getDate()}</strong>
+                        <small>{dateItems.length ? `${dateItems.length} 项` : "空"}</small>
+                      </button>
+                      <div className="calendar-items">
+                        {dateItems.slice(0, 3).map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            draggable
+                            className={`calendar-chip ${calendarTone[item.calendar]} ${
+                              item.state === "done" ? "done" : ""
+                            } ${draggingItemId === item.id ? "dragging" : ""}`}
+                            onDragStart={(event) => beginDragItem(event, item.id, item.date)}
+                            onDragEnd={endDragItem}
+                            onClick={() => openEdit(item)}
+                          >
+                            <span>{item.start || (item.kind === "task" ? "待办" : "全天")}</span>
+                            {item.title}
+                          </button>
+                        ))}
+                        {dateItems.length > 3 && <span className="more-count">+{dateItems.length - 3}</span>}
+                      </div>
+                      <button
+                        type="button"
+                        className="blank-create"
+                        onClick={() => openCreate(key)}
+                        aria-label={`${date.getMonth() + 1} 月 ${date.getDate()} 日新增任务`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {widgetMode === "month" && (
             <div className="month-grid">
               {weekdays.map((day) => (
                 <span key={day} className="weekday">
@@ -414,7 +756,10 @@ function App() {
                     key={key}
                     className={`date-cell ${key === selectedDate ? "selected" : ""} ${
                       key === todayKey ? "today" : ""
-                    } ${inMonth ? "" : "muted"}`}
+                    } ${inMonth ? "" : "muted"} ${dropTargetDate === key ? "drop-target" : ""}`}
+                    onDragOver={(event) => allowDropOnDate(event, key)}
+                    onDragLeave={() => leaveDropDate(key)}
+                    onDrop={(event) => dropItemOnDate(event, key)}
                   >
                     <button
                       type="button"
@@ -454,81 +799,11 @@ function App() {
             </div>
           )}
 
-          {viewMode === "week" && (
-            <div className="week-grid">
-              {weekdays.map((day) => (
-                <span key={day} className="weekday">
-                  {day}
-                </span>
-              ))}
-              {monthDates.slice(2, 9).map((date) => {
-                const key = formatDateKey(date);
-                const dateItems = visibleMonthItems(key);
-                return (
-                  <div
-                    key={key}
-                    className={`week-day ${key === selectedDate ? "selected" : ""} ${
-                      key === todayKey ? "today" : ""
-                    }`}
-                  >
-                    <button type="button" className="week-day-head" onClick={() => setSelectedDate(key)}>
-                      <strong>{date.getDate()}</strong>
-                      <small>{dateItems.length}</small>
-                    </button>
-                    <div className="calendar-items">
-                      {dateItems.map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          className={`calendar-chip ${calendarTone[item.calendar]} ${
-                            item.state === "done" ? "done" : ""
-                          }`}
-                          onClick={() => openEdit(item)}
-                        >
-                          <span>{item.start || "全天"}</span>
-                          {item.title}
-                        </button>
-                      ))}
-                    </div>
-                    <button
-                      type="button"
-                      className="blank-create"
-                      onClick={() => openCreate(key)}
-                      aria-label={`${date.getMonth() + 1} 月 ${date.getDate()} 日新增任务`}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {viewMode === "day" && (
-            <div className="day-timeline">
-              {selectedItems.length === 0 ? (
-                <button type="button" className="empty-day" onClick={() => openCreate(selectedDate)}>
-                  这一天还没有安排，点此新增
-                </button>
-              ) : (
-                selectedItems.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className={`timeline-item ${calendarTone[item.calendar]} ${
-                      item.state === "done" ? "done" : ""
-                    }`}
-                    onClick={() => openEdit(item)}
-                  >
-                    <span>{formatItemTime(item)}</span>
-                    <strong>{item.title}</strong>
-                    {item.note && <em>{item.note}</em>}
-                  </button>
-                ))
-              )}
-            </div>
+            </>
           )}
         </section>
 
-        {isTaskPanelOpen && (
+        {isTaskPanelOpen && widgetMode !== "summary" && (
         <aside className="task-panel" aria-label="当天安排">
           <div className="toolbar">
             <div>
@@ -556,7 +831,13 @@ function App() {
 
           <div className="item-list">
             {selectedItems.map((item) => (
-              <article key={item.id} className={`item ${calendarTone[item.calendar]}`}>
+              <article
+                key={item.id}
+                className={`item ${calendarTone[item.calendar]} ${draggingItemId === item.id ? "dragging" : ""}`}
+                draggable
+                onDragStart={(event) => beginDragItem(event, item.id, item.date)}
+                onDragEnd={endDragItem}
+              >
                 <button
                   className="state-button"
                   type="button"
@@ -730,20 +1011,28 @@ function App() {
             </label>
 
             <div className="setting-block">
-              <span>默认视图</span>
-              <div className="pin-options">
-                {(["month", "week", "day"] as const).map((mode) => (
+              <span>贴片默认模式</span>
+              <div className="pin-options pin-options-wide">
+                {([
+                  ["auto", "自适应"],
+                  ["biweek", "双周"],
+                  ["summary", "摘要"],
+                  ["month", "月视图"],
+                ] as const).map(([mode, label]) => (
                   <button
                     key={mode}
                     type="button"
-                    className={viewMode === mode ? "active" : ""}
-                    onClick={() => setViewMode(mode)}
+                    className={widgetModePreference === mode ? "active" : ""}
+                    onClick={() => {
+                      setWidgetModePreference(mode);
+                      setWidgetMode(mode === "auto" ? getAutoWidgetMode() : mode);
+                    }}
                   >
-                    {mode === "month" ? "月" : mode === "week" ? "周" : "日"}
+                    {label}
                   </button>
                 ))}
               </div>
-              <p>视图切换属于低频操作，默认放在设置里，主界面优先留给日历。</p>
+              <p>自适应时，宽窗默认双周，窄窗默认摘要；月视图只在你手动固定后保持。</p>
             </div>
 
             <div className="setting-block">

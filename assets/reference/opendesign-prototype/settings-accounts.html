@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dayboard Settings — Accounts</title>
+  <link rel="stylesheet" href="styles/settings.css" />
+</head>
+<body>
+  <main class="settings-stage">
+    <section class="settings-window" aria-label="Dayboard 账号连接设置窗口">
+      <header class="window-bar">
+        <span class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="window-title">Dayboard · 账号连接</span>
+        <span class="status-chip"><i></i>CONNECTED</span>
+      </header>
+
+      <div class="settings-layout">
+        <aside class="settings-sidebar">
+          <div class="product-mark">
+            <div class="product-mark__icon" aria-hidden="true">
+              <svg viewBox="0 0 20 20" width="18" height="18"><rect x="3" y="4" width="14" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 8h8M7 2.8v3M13 2.8v3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </div>
+            <div>
+              <h1>Dayboard</h1>
+              <p>Settings reference</p>
+            </div>
+          </div>
+
+          <nav class="nav-stack" aria-label="设置分组">
+            <a class="nav-item is-active" href="settings-accounts.html">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M5.5 10.2a3 3 0 0 1 0-4.2l1.8-1.8a3 3 0 0 1 4.2 4.2L10.4 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14.5 9.8a3 3 0 0 1 0 4.2l-1.8 1.8a3 3 0 0 1-4.2-4.2L9.6 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              账号连接
+            </a>
+            <a class="nav-item" href="settings-widget.html">
+              <svg viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="12" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="M7 8h6M7 11h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              贴片外观
+            </a>
+          </nav>
+
+          <p class="sidebar-note">这里只定义会影响开发架构的设置项：账号、同步范围、错误状态和低显眼度连接标识。</p>
+        </aside>
+
+        <section class="settings-content">
+          <header class="content-head">
+            <div>
+              <h2>账号连接</h2>
+              <p>把 Gmail、Outlook 和订阅日历同步到 Dayboard。连接状态保持低干扰，详细编辑交给主应用流程。</p>
+            </div>
+            <button class="action-button action-button--primary" type="button" data-sync-button>手动同步</button>
+          </header>
+
+          <div class="card-grid">
+            <article class="account-card">
+              <div class="account-icon">G</div>
+              <div class="account-main">
+                <h3>Gmail</h3>
+                <p>已连接个人 Google 账号，日历和邮件日程进入桌面贴片。</p>
+                <div class="account-meta">
+                  <span class="meta-pill">Calendar</span>
+                  <span class="meta-pill">Mail events</span>
+                  <span class="meta-pill">Last sync 2m ago</span>
+                </div>
+              </div>
+              <span class="status-chip"><i></i>CONNECTED</span>
+            </article>
+
+            <article class="account-card">
+              <div class="account-icon">O</div>
+              <div class="account-main">
+                <h3>Outlook</h3>
+                <p>工作账号已连接，任务列表正在同步。失败时只给轻量提示，不放大成主警告。</p>
+                <div class="account-meta">
+                  <span class="meta-pill">Calendar</span>
+                  <span class="meta-pill">Tasks</span>
+                  <span class="meta-pill">Syncing</span>
+                </div>
+              </div>
+              <span class="status-chip status-chip--warning"><i></i>SYNCING</span>
+            </article>
+
+            <article class="account-card">
+              <div class="account-icon">I</div>
+              <div class="account-main">
+                <h3>ICS / Apple Calendar</h3>
+                <p>作为后续订阅入口保留，不在当前首版里做完整连接流程。</p>
+                <div class="account-meta">
+                  <span class="meta-pill">Subscription</span>
+                  <span class="meta-pill">Optional</span>
+                </div>
+              </div>
+              <button class="action-button" type="button">连接</button>
+            </article>
+          </div>
+
+          <section class="setting-card">
+            <h3>同步范围</h3>
+            <p>这些开关决定贴片可读取哪些内容；默认只同步日历和任务，不默认读取所有邮件。</p>
+            <div class="settings-row">
+              <div class="row-copy"><strong>日历事件</strong><span>会议、全天事件、外部邀请。</span></div>
+              <button class="toggle is-on" type="button" data-toggle aria-pressed="true" aria-label="切换日历事件同步"></button>
+            </div>
+            <div class="settings-row">
+              <div class="row-copy"><strong>任务列表</strong><span>Outlook To Do、本地任务和轻量待办。</span></div>
+              <button class="toggle is-on" type="button" data-toggle aria-pressed="true" aria-label="切换任务列表同步"></button>
+            </div>
+            <div class="settings-row">
+              <div class="row-copy"><strong>邮件识别日程</strong><span>从邮件中提取航班、会议和预约，默认需要用户开启。</span></div>
+              <button class="toggle" type="button" data-toggle aria-pressed="false" aria-label="切换邮件识别日程"></button>
+            </div>
+          </section>
+
+          <div class="sync-alert">
+            <p>Outlook 任务列表 16 分钟前同步失败，日历仍可正常显示。</p>
+            <button class="action-button" type="button" data-retry-sync>重试</button>
+          </div>
+        </section>
+      </div>
+    </section>
+  </main>
+  <script src="scripts/settings.js"></script>
+</body>
+</html>

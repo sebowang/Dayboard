@@ -33,7 +33,7 @@
 
 - Tauri v2 官方插件覆盖 autostart、single-instance、sql、store、stronghold、updater、window-state、system-tray 和 window-customization 等 Dayboard 需要的能力。
 - Tauri 比 Electron 更适合轻量、本地优先、长期常驻的桌面应用定位。
-- React + TypeScript 适合快速构建月/周/日视图和表单交互。
+- React + TypeScript 适合快速构建双周、摘要、月视图和表单交互。
 - SQLite 适合本地任务、事件缓存和同步状态。
 
 备选：
@@ -85,4 +85,17 @@
 - 点击日历格子的空白区域直接新建任务，减少额外按钮依赖。
 - 主界面弱化品牌，不常驻显示产品名；保留设置、托盘和关于页作为品牌出现位置。
 - 操作入口使用悬浮工具条，并支持左侧/右侧切换，以适配用户把日历贴在屏幕左侧或右侧的习惯。
-- 月/周/日视图切换属于低频操作，放入设置面板，主界面仅保留轻量月份信息和翻页入口。
+- 贴片模式切换属于低频操作，设置里提供默认模式；主界面只保留低显眼度的双周 / 摘要 / 月切换和轻量月份翻页入口。
+
+## D007：OpenDesign 原型作为当前 MVP 的优先视觉参考
+
+状态：已接受
+
+依据：用户确认 OpenDesign 原型的深色、半透明、安静桌面贴片外观更接近目标体验；沟通纠错用截图不作为参考。已废弃的 OpenDesign 页面 `index.html`、`widget-empty.html`、`widget-busy.html` 不纳入项目参考。
+
+影响：
+
+- `assets/reference/opendesign-prototype/` 只保留 `widget-main.html`、设置页、样式和脚本等有用参考文件。
+- 当前实现优先深化 OpenDesign 主贴片方向，而不是继续沿用早期普通日历 App 外观。
+- MVP 主贴片模式收敛为双周、摘要、月视图；周视图和日视图不再作为当前桌面贴片主入口。
+- Gmail / Outlook 在 MVP 中只保留低强调账号入口，不进入真实 OAuth。

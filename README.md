@@ -7,13 +7,15 @@ Dayboard is a lightweight Windows desktop calendar and task board prototype. It 
 This repository currently contains an early local MVP prototype:
 
 - Large calendar-first desktop board UI.
-- Month, week, and day views.
+- Desktop widget modes for double-week, summary, and month views.
 - Tasks and events shown directly inside calendar cells.
 - Click an existing item to edit it.
 - Click empty space in a day cell to create a task.
+- Drag a task or event between days to reschedule it.
 - Collapsible task list/details panel.
 - Floating tool rail that can be placed on the left or right.
-- Settings for opacity, default view, fixed-window mode, and tool rail position.
+- Settings for opacity, default widget mode, fixed-window mode, and tool rail position.
+- Low-emphasis Gmail / Outlook account entry placeholder for the later sync phase.
 - Local persistence with `localStorage` for tasks and settings.
 
 Calendar account sync is not implemented yet. Google Calendar and Outlook sync are planned for later phases after the local desktop experience is stable.
@@ -92,6 +94,7 @@ Start here:
 - `docs/PRD.md`
 - `docs/ROADMAP.md`
 - `docs/DECISIONS.md`
+- `docs/dayboard-design-spec-2026-06-06.md`
 - `docs/OPEN_SOURCE_RESEARCH.md`
 - `notes/windows-desktop-widget-notes.md`
 - `notes/calendar-sync-notes.md`

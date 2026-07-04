@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dayboard Widget — Main</title>
+  <link rel="stylesheet" href="styles/widget.css" />
+</head>
+<body>
+  <main class="desktop-stage">
+    <section class="widget-shell widget-shell--monthly-focus widget-shell--drawer-closed" data-widget-shell>
+      <aside class="panel panel--calendar panel--calendar-focus">
+        <div class="panel-topline panel-topline--calendar-focus">
+          <div class="panel-title-block panel-title-block--calendar">
+            <h1 class="panel-heading panel-heading--large">June 2026</h1>
+            <p class="calendar-period" data-period-label>Jun 10 · Wed</p>
+          </div>
+          <div class="panel-toolbar panel-toolbar--tight">
+            <button class="icon-button icon-button--glance" type="button" data-glance-toggle aria-expanded="false" aria-controls="day-glance-panel" aria-label="展开当日任务">
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <rect x="3.25" y="4.5" width="13.5" height="12.25" rx="2.25" fill="none" stroke="currentColor" stroke-width="1.4"></rect>
+                <path d="M6.2 3.3v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path>
+                <path d="M13.8 3.3v3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path>
+                <path d="M3.8 8.15h12.4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path>
+                <circle cx="8" cy="11.45" r="1.1" fill="currentColor"></circle>
+                <circle cx="12" cy="11.45" r="1.1" fill="currentColor" opacity="0.72"></circle>
+              </svg>
+            </button>
+            <div class="view-switch" data-view-switch aria-label="视图切换">
+              <button class="view-switch__button is-active" type="button" data-view-target="month">月</button>
+              <button class="view-switch__button" type="button" data-view-target="week">周</button>
+              <button class="view-switch__button" type="button" data-view-target="fortnight">双周</button>
+            </div>
+            <button class="icon-button" type="button" aria-label="日历连接状态">
+              <svg viewBox="0 0 20 20" aria-hidden="true">
+                <path d="M6.5 10.2a3 3 0 0 1 0-4.2l1.8-1.8a3 3 0 0 1 4.2 4.2L11.4 9" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"/>
+                <path d="M13.5 9.8a3 3 0 0 1 0 4.2l-1.8 1.8a3 3 0 1 1-4.2-4.2L8.6 11" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.6"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="widget-mainstage">
+        <section class="planner-view planner-view--month is-active" data-view-panel="month">
+          <div class="calendar-month calendar-month--dense">
+            <div class="calendar-grid calendar-grid--monthly" data-calendar-grid>
+              <button class="calendar-cell calendar-cell--muted" type="button" data-date="2026-05-26"><span class="calendar-cell__day">26</span></button>
+              <button class="calendar-cell calendar-cell--muted" type="button" data-date="2026-05-27"><span class="calendar-cell__day">27</span></button>
+              <button class="calendar-cell calendar-cell--muted" type="button" data-date="2026-05-28"><span class="calendar-cell__day">28</span></button>
+              <button class="calendar-cell calendar-cell--muted" type="button" data-date="2026-05-29"><span class="calendar-cell__day">29</span></button>
+              <button class="calendar-cell calendar-cell--muted" type="button" data-date="2026-05-30"><span class="calendar-cell__day">30</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-05-31"><span class="calendar-cell__day">31</span><span class="calendar-cell__bars"><i class="level-1"></i></span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-01"><span class="calendar-cell__day">1</span></button>
+
+              <button class="calendar-cell" type="button" data-date="2026-06-02"><span class="calendar-cell__day">2</span><span class="calendar-cell__bars"><i class="level-1"></i></span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-03"><span class="calendar-cell__day">3</span><span class="calendar-cell__bars"><i class="level-2"></i><i class="level-1"></i></span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-04"><span class="calendar-cell__day">4</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-05"><span class="calendar-cell__day">5</span><span class="calendar-cell__bars"><i class="level-1"></i></span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-06"><span class="calendar-cell__day">6</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-07"><span class="calendar-cell__day">7</span></button>
+              <button class="calendar-cell calendar-cell--today" type="button" data-date="2026-06-08"><span class="calendar-cell__day">8</span><span class="calendar-cell__bars"><i class="level-3"></i><i class="level-2"></i></span></button>
+
+              <button class="calendar-cell" type="button" data-date="2026-06-09"><span class="calendar-cell__day">9</span><span class="calendar-cell__bars"><i class="level-2"></i></span></button>
+              <button class="calendar-cell calendar-cell--selected" type="button" data-date="2026-06-10"><span class="calendar-cell__day">10</span><span class="calendar-cell__bars"><i class="level-2"></i><i class="level-1"></i></span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-11"><span class="calendar-cell__day">11</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-12"><span class="calendar-cell__day">12</span><span class="calendar-cell__bars"><i class="level-3"></i></span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-13"><span class="calendar-cell__day">13</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-14"><span class="calendar-cell__day">14</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-15"><span class="calendar-cell__day">15</span></button>
+
+              <button class="calendar-cell" type="button" data-date="2026-06-16"><span class="calendar-cell__day">16</span><span class="calendar-cell__bars"><i class="level-1"></i></span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-17"><span class="calendar-cell__day">17</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-18"><span class="calendar-cell__day">18</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-19"><span class="calendar-cell__day">19</span><span class="calendar-cell__bars"><i class="level-2"></i></span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-20"><span class="calendar-cell__day">20</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-21"><span class="calendar-cell__day">21</span><span class="calendar-cell__bars"><i class="level-1"></i></span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-22"><span class="calendar-cell__day">22</span></button>
+
+              <button class="calendar-cell" type="button" data-date="2026-06-23"><span class="calendar-cell__day">23</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-24"><span class="calendar-cell__day">24</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-25"><span class="calendar-cell__day">25</span><span class="calendar-cell__bars"><i class="level-2"></i></span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-26"><span class="calendar-cell__day">26</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-27"><span class="calendar-cell__day">27</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-28"><span class="calendar-cell__day">28</span><span class="calendar-cell__bars"><i class="level-1"></i></span></button>
+              <button class="calendar-cell" type="button" data-date="2026-06-29"><span class="calendar-cell__day">29</span></button>
+
+              <button class="calendar-cell" type="button" data-date="2026-06-30"><span class="calendar-cell__day">30</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-07-01"><span class="calendar-cell__day">1</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-07-02"><span class="calendar-cell__day">2</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-07-03"><span class="calendar-cell__day">3</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-07-04"><span class="calendar-cell__day">4</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-07-05"><span class="calendar-cell__day">5</span></button>
+              <button class="calendar-cell" type="button" data-date="2026-07-06"><span class="calendar-cell__day">6</span></button>
+            </div>
+          </div>
+        </section>
+
+        <section class="planner-view" data-view-panel="week">
+          <div class="calendar-month calendar-month--week">
+            <div class="calendar-header calendar-header--floating">
+              <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+            </div>
+            <div class="week-calendar-board">
+              <button class="calendar-cell calendar-cell--week calendar-cell--today" type="button" data-date="2026-06-08">
+                <span class="calendar-cell__day">8</span>
+                <span class="calendar-cell__tasks"><em>09:30 校准排期</em><em>14:00 设计评审</em><em>18:30 回顾</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-09">
+                <span class="calendar-cell__day">9</span>
+                <span class="calendar-cell__tasks"><em>11:00 团队同步</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week calendar-cell--selected" type="button" data-date="2026-06-10">
+                <span class="calendar-cell__day">10</span>
+                <span class="calendar-cell__tasks"><em>09:30 周中校准</em><em>14:00 贴片视觉微调</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-11">
+                <span class="calendar-cell__day">11</span>
+                <span class="calendar-cell__tasks"><em>15:00 留白处理</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-12">
+                <span class="calendar-cell__day">12</span>
+                <span class="calendar-cell__tasks"><em>10:00 客户会议</em><em>13:00 方案确认</em><em>16:00 复盘</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-13">
+                <span class="calendar-cell__day">13</span>
+                <span class="calendar-cell__tasks"><em>11:00 轻整理</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-14">
+                <span class="calendar-cell__day">14</span>
+                <span class="calendar-cell__tasks"><em>保持空白</em></span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section class="planner-view" data-view-panel="fortnight">
+          <div class="calendar-month calendar-month--fortnight">
+            <div class="calendar-header calendar-header--floating">
+              <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+            </div>
+            <div class="fortnight-calendar-board">
+              <button class="calendar-cell calendar-cell--week calendar-cell--today" type="button" data-date="2026-06-08">
+                <span class="calendar-cell__day">8</span>
+                <span class="calendar-cell__tasks"><em>校准排期</em><em>设计评审</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-09">
+                <span class="calendar-cell__day">9</span>
+                <span class="calendar-cell__tasks"><em>团队同步</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week calendar-cell--selected" type="button" data-date="2026-06-10">
+                <span class="calendar-cell__day">10</span>
+                <span class="calendar-cell__tasks"><em>周中校准</em><em>视觉微调</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-11">
+                <span class="calendar-cell__day">11</span>
+                <span class="calendar-cell__tasks"><em>留白处理</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-12">
+                <span class="calendar-cell__day">12</span>
+                <span class="calendar-cell__tasks"><em>客户会议</em><em>方案确认</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-13">
+                <span class="calendar-cell__day">13</span>
+                <span class="calendar-cell__tasks"><em>轻整理</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-14">
+                <span class="calendar-cell__day">14</span>
+                <span class="calendar-cell__tasks"><em>保持空白</em></span>
+              </button>
+
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-15">
+                <span class="calendar-cell__day">15</span>
+                <span class="calendar-cell__tasks"><em>周会</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-16">
+                <span class="calendar-cell__day">16</span>
+                <span class="calendar-cell__tasks"><em>需求整理</em><em>邮件回复</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-17">
+                <span class="calendar-cell__day">17</span>
+                <span class="calendar-cell__tasks"><em>专注空档</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-18">
+                <span class="calendar-cell__day">18</span>
+                <span class="calendar-cell__tasks"><em>同步会议</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-19">
+                <span class="calendar-cell__day">19</span>
+                <span class="calendar-cell__tasks"><em>集中处理</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-20">
+                <span class="calendar-cell__day">20</span>
+                <span class="calendar-cell__tasks"><em>保持空白</em></span>
+              </button>
+              <button class="calendar-cell calendar-cell--week" type="button" data-date="2026-06-21">
+                <span class="calendar-cell__day">21</span>
+                <span class="calendar-cell__tasks"><em>保持空白</em></span>
+              </button>
+            </div>
+          </div>
+        </section>
+        </div>
+      </aside>
+
+      <section class="panel panel--glance panel--glance-simple panel--glance-drawer" id="day-glance-panel" data-glance-panel hidden>
+        <header class="timeline-header timeline-header--glance">
+          <div class="glance-heading">
+            <p class="section-title" data-glance-date>Jun 10 · Wed</p>
+            <h2>当日任务</h2>
+          </div>
+          <button class="ghost-button ghost-button--compact" type="button">打开主应用</button>
+        </header>
+
+        <article class="event-card event-card--glance event-card--next" draggable="true" data-task-title="09:30 周中排期校准">
+          <p class="event-time">09:30 — 10:00</p>
+          <h3>周中排期校准</h3>
+          <p class="event-meta">Outlook · 今天最先处理的一项</p>
+        </article>
+
+        <div class="timeline-stack timeline-stack--glance" data-glance-stack>
+          <article class="event-card" draggable="true" data-task-title="11:30 检查双周空档">
+            <p class="event-time">11:30</p>
+            <h3>检查双周空档</h3>
+            <p class="event-meta">确认下周三是否可挪入新任务</p>
+          </article>
+        </div>
+
+        <div class="statusline" aria-label="已连接 Gmail 和 Outlook">
+          <span class="status-pill status-pill--connected"><i></i>CONNECTED</span>
+        </div>
+      </section>
+    </section>
+  </main>
+  <script src="scripts/widget.js"></script>
+</body>
+</html>
+

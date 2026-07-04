@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dayboard Settings — Widget</title>
+  <link rel="stylesheet" href="styles/settings.css" />
+</head>
+<body>
+  <main class="settings-stage">
+    <section class="settings-window" aria-label="Dayboard 贴片外观设置窗口">
+      <header class="window-bar">
+        <span class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></span>
+        <span class="window-title">Dayboard · 贴片外观</span>
+        <span class="status-chip"><i></i>SAVED</span>
+      </header>
+
+      <div class="settings-layout">
+        <aside class="settings-sidebar">
+          <div class="product-mark">
+            <div class="product-mark__icon" aria-hidden="true">
+              <svg viewBox="0 0 20 20" width="18" height="18"><rect x="3" y="4" width="14" height="12" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M6 8.5h8M6 12h5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </div>
+            <div>
+              <h1>Dayboard</h1>
+              <p>Widget reference</p>
+            </div>
+          </div>
+
+          <nav class="nav-stack" aria-label="设置分组">
+            <a class="nav-item" href="settings-accounts.html">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M5.5 10.2a3 3 0 0 1 0-4.2l1.8-1.8a3 3 0 0 1 4.2 4.2L10.4 9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M14.5 9.8a3 3 0 0 1 0 4.2l-1.8 1.8a3 3 0 0 1-4.2-4.2L9.6 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              账号连接
+            </a>
+            <a class="nav-item is-active" href="settings-widget.html">
+              <svg viewBox="0 0 20 20" fill="none"><rect x="3" y="4" width="14" height="12" rx="3" stroke="currentColor" stroke-width="1.5"/><path d="M7 8h6M7 11h3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+              贴片外观
+            </a>
+          </nav>
+
+          <p class="sidebar-note">这页只定义桌面贴片本身的显示规则：默认月视图、任务面板隐藏、桌面行为和透明度。</p>
+        </aside>
+
+        <section class="settings-content">
+          <header class="content-head">
+            <div>
+              <h2>贴片外观</h2>
+              <p>设置桌面贴片默认视图、尺寸、透明度和桌面行为。默认状态应该是一整块月视图，任务面板只在点击日历 icon 后展开。</p>
+            </div>
+            <span class="status-chip"><i></i>MONTH FIRST</span>
+          </header>
+
+          <div class="card-grid card-grid--two">
+            <section class="setting-card">
+              <h3>默认视图</h3>
+              <p>贴到桌面时默认打开月视图；周和双周是切换态，不是常驻三栏。</p>
+              <div class="settings-row">
+                <div class="row-copy"><strong>启动后显示</strong><span>主视图占满整个贴片。</span></div>
+                <div class="segmented" data-segmented aria-label="默认视图">
+                  <button class="is-active" type="button">月</button>
+                  <button type="button">周</button>
+                  <button type="button">双周</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="setting-card">
+              <h3>贴片尺寸</h3>
+              <p>先给开发三个固定档位，避免自由缩放过早增加复杂度。</p>
+              <div class="settings-row">
+                <div class="row-copy"><strong>尺寸档位</strong><span>标准尺寸用于首版参考。</span></div>
+                <div class="segmented" data-segmented aria-label="贴片尺寸">
+                  <button type="button">紧凑</button>
+                  <button class="is-active" type="button">标准</button>
+                  <button type="button">宽</button>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <section class="setting-card">
+            <h3>桌面行为</h3>
+            <div class="settings-row">
+              <div class="row-copy"><strong>锁定在桌面</strong><span>避免拖动或误关，适合常驻查看。</span></div>
+              <button class="toggle is-on" type="button" data-toggle aria-pressed="true" aria-label="切换锁定在桌面"></button>
+            </div>
+            <div class="settings-row">
+              <div class="row-copy"><strong>开机启动</strong><span>进入 Windows 后自动恢复上次位置。</span></div>
+              <button class="toggle is-on" type="button" data-toggle aria-pressed="true" aria-label="切换开机启动"></button>
+            </div>
+            <div class="settings-row">
+              <div class="row-copy"><strong>置顶显示</strong><span>仅在用户主动开启时覆盖其他窗口。</span></div>
+              <button class="toggle" type="button" data-toggle aria-pressed="false" aria-label="切换置顶显示"></button>
+            </div>
+            <div class="settings-row">
+              <div class="row-copy"><strong>鼠标穿透</strong><span>查看时更安静，悬停快捷键可临时解锁。</span></div>
+              <button class="toggle" type="button" data-toggle aria-pressed="false" aria-label="切换鼠标穿透"></button>
+            </div>
+          </section>
+
+          <div class="card-grid card-grid--two">
+            <section class="setting-card">
+              <h3>透明度与主题</h3>
+              <div class="settings-row">
+                <div class="row-copy"><strong>贴片透明度</strong><span>保持可读，不做重玻璃效果。</span></div>
+                <div class="range-row">
+                  <input type="range" min="72" max="100" value="88" data-opacity-range aria-label="贴片透明度" />
+                  <span class="range-value" data-opacity-value>88%</span>
+                </div>
+              </div>
+              <div class="settings-row">
+                <div class="row-copy"><strong>主题</strong><span>首版推荐跟随深色贴片系统。</span></div>
+                <div class="segmented" data-segmented aria-label="主题">
+                  <button class="is-active" type="button">深色</button>
+                  <button type="button">浅色</button>
+                  <button type="button">跟随系统</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="setting-card">
+              <h3>任务面板</h3>
+              <p>默认不占空间。点击当前视图里的日历 icon 后，日历让出一块区域给当日任务面板。</p>
+              <div class="settings-row">
+                <div class="row-copy"><strong>默认状态</strong><span>隐藏，当日任务不常驻。</span></div>
+                <span class="status-chip status-chip--idle"><i></i>HIDDEN</span>
+              </div>
+              <div class="settings-row">
+                <div class="row-copy"><strong>展开方式</strong><span>日历 icon 触发，月 / 周 / 双周一致。</span></div>
+                <button class="action-button" type="button" data-preview-toggle>展开任务面板</button>
+              </div>
+            </section>
+          </div>
+
+          <section class="setting-card">
+            <h3>贴片预览</h3>
+            <p>开发参考：关闭状态下月视图占满整个贴片；展开后右侧出现当日任务面板。</p>
+            <div class="mini-preview" data-preview-shell>
+              <div class="preview-calendar">
+                <div class="preview-head"><strong>June 2026</strong><span class="status-chip"><i></i>CONNECTED</span></div>
+                <div class="preview-grid" aria-hidden="true">
+                  <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                  <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                  <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                  <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                  <i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+                </div>
+              </div>
+              <aside class="preview-drawer">
+                <span class="section-title">Jun 10</span>
+                <div class="preview-task"></div>
+                <div class="preview-task"></div>
+                <p class="footer-note">任务面板只在用户需要下钻时出现。</p>
+              </aside>
+            </div>
+          </section>
+        </section>
+      </div>
+    </section>
+  </main>
+  <script src="scripts/settings.js"></script>
+</body>
+</html>

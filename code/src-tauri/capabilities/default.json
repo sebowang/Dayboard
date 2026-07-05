@@ -3,5 +3,12 @@
   "identifier": "default",
   "description": "Default permissions for the Dayboard desktop shell.",
   "windows": ["main"],
-  "permissions": ["core:default", "window-state:default"]
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "core:window:allow-set-always-on-top",
+    "core:window:allow-set-resizable",
+    "core:window:allow-set-skip-taskbar",
+    "window-state:default"
+  ]
 }

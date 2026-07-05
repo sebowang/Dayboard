@@ -246,6 +246,13 @@ button {
   outline: none;
 }
 
+.icon-button:disabled {
+  cursor: default;
+  color: color-mix(in oklab, var(--muted) 74%, transparent);
+  background: rgba(255, 255, 255, 0.025);
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
 .view-switch,
 .segmented,
 .pin-options {

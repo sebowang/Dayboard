@@ -96,3 +96,17 @@ Electron BrowserWindow/BaseWindow 明确支持 alwaysOnTop、skipTaskbar、focus
 
 - Rustup：https://rustup.rs/
 - Visual Studio Build Tools，包含 MSVC 和 Windows SDK：https://aka.ms/vs/17/release/vs_BuildTools.exe
+
+## 2026-07-05 桌面行为接入进展
+
+本次前端已开始把设置页的桌面行为接入 Tauri 窗口 API：
+
+- 固定方式会同步到 `setAlwaysOnTop`、`setAlwaysOnBottom` 和 `setSkipTaskbar`。
+- 锁定在桌面会同步到 `setResizable(false)`，并移除前端的 Tauri 拖动区域。
+- 任务栏隐藏、置顶和窗口缩放相关权限已加入 `src-tauri/capabilities/default.json`。
+- 鼠标穿透暂不接真实 `setIgnoreCursorEvents`，因为还没有全局快捷键或托盘解锁路径，直接启用会让用户难以恢复交互。
+
+验证结果：
+
+- `npm run build` 通过，可确认 React、TypeScript 和 Vite 构建正常。
+- `npm run tauri -- build --no-bundle` 未能执行，原因是当前系统找不到 `cargo`。需要安装 Rustup、MSVC Build Tools 和 Windows SDK 后再验证 Tauri 壳的真实窗口行为。

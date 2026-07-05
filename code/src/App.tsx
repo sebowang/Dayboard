@@ -48,6 +48,9 @@ type AppSettings = {
   pinMode: PinMode;
   widgetSize: WidgetSize;
   themeMode: ThemeMode;
+  desktopLocked: boolean;
+  autoStart: boolean;
+  mousePassthrough: boolean;
 };
 
 type DragPayload = {
@@ -137,6 +140,9 @@ const defaultSettings: AppSettings = {
   pinMode: "desktop",
   widgetSize: "standard",
   themeMode: "dark",
+  desktopLocked: true,
+  autoStart: false,
+  mousePassthrough: false,
 };
 
 const toneClass: Record<CalendarName, string> = {
@@ -254,6 +260,9 @@ const loadSettings = () => {
       isGlanceOpen: Boolean(parsed.isGlanceOpen ?? parsed.isTaskPanelOpen),
       widgetSize: normalizeSize(parsed.widgetSize),
       themeMode: normalizeTheme(parsed.themeMode),
+      desktopLocked: Boolean(parsed.desktopLocked ?? defaultSettings.desktopLocked),
+      autoStart: Boolean(parsed.autoStart ?? defaultSettings.autoStart),
+      mousePassthrough: Boolean(parsed.mousePassthrough ?? defaultSettings.mousePassthrough),
     } as AppSettings;
   } catch {
     return defaultSettings;
@@ -275,12 +284,17 @@ async function hideWindow() {
   }
 }
 
-async function applyPinMode(mode: PinMode) {
+async function applyWindowBehavior(mode: PinMode, locked: boolean) {
   try {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    const window = getCurrentWindow();
-    await window.setAlwaysOnTop(mode === "top");
-    await window.setSkipTaskbar(mode === "desktop");
+    const appWindow = getCurrentWindow();
+    const run = (action: Promise<void>) => action.catch(() => undefined);
+    await Promise.all([
+      run(appWindow.setAlwaysOnTop(mode === "top")),
+      run(appWindow.setAlwaysOnBottom(mode === "desktop")),
+      run(appWindow.setSkipTaskbar(mode === "desktop")),
+      run(appWindow.setResizable(!locked)),
+    ]);
   } catch {
     return;
   }
@@ -303,9 +317,9 @@ function App() {
   const [effectiveTheme, setEffectiveTheme] = useState<EffectiveTheme>(
     initialSettings.themeMode === "system" ? getSystemTheme() : initialSettings.themeMode,
   );
-  const [desktopLocked, setDesktopLocked] = useState(true);
-  const [autoStart, setAutoStart] = useState(false);
-  const [mousePassthrough, setMousePassthrough] = useState(false);
+  const [desktopLocked, setDesktopLocked] = useState(initialSettings.desktopLocked);
+  const [autoStart, setAutoStart] = useState(initialSettings.autoStart);
+  const [mousePassthrough, setMousePassthrough] = useState(initialSettings.mousePassthrough);
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState("");
   const toastTimer = useRef<number | null>(null);
@@ -342,13 +356,23 @@ function App() {
   useEffect(() => {
     localStorage.setItem(
       STORAGE_KEYS.settings,
-      JSON.stringify({ widgetMode, isGlanceOpen, opacity, pinMode, widgetSize, themeMode }),
+      JSON.stringify({
+        widgetMode,
+        isGlanceOpen,
+        opacity,
+        pinMode,
+        widgetSize,
+        themeMode,
+        desktopLocked,
+        autoStart,
+        mousePassthrough,
+      }),
     );
-  }, [widgetMode, isGlanceOpen, opacity, pinMode, widgetSize, themeMode]);
+  }, [widgetMode, isGlanceOpen, opacity, pinMode, widgetSize, themeMode, desktopLocked, autoStart, mousePassthrough]);
 
   useEffect(() => {
-    void applyPinMode(pinMode);
-  }, [pinMode]);
+    void applyWindowBehavior(pinMode, desktopLocked);
+  }, [pinMode, desktopLocked]);
 
   useEffect(() => {
     return () => {
@@ -508,6 +532,9 @@ function App() {
     setPinMode(defaultSettings.pinMode);
     setWidgetSize(defaultSettings.widgetSize);
     setThemeMode(defaultSettings.themeMode);
+    setDesktopLocked(defaultSettings.desktopLocked);
+    setAutoStart(defaultSettings.autoStart);
+    setMousePassthrough(defaultSettings.mousePassthrough);
     setSelectedDate(todayKey);
     setCurrentMonth(parseDateKey(todayKey));
     showNotice("已恢复示例数据和默认贴片设置");
@@ -601,7 +628,7 @@ function App() {
     >
       <section
         className={`widget-shell ${isGlanceOpen ? "widget-shell--drawer-open" : "widget-shell--drawer-closed"}`}
-        data-tauri-drag-region
+        data-tauri-drag-region={desktopLocked ? undefined : true}
       >
         <aside className="panel panel--calendar panel--calendar-focus">
           <div className="panel-topline panel-topline--calendar-focus">
@@ -610,7 +637,13 @@ function App() {
               <p className="calendar-period">{formatPeriodLabel(selectedDate)}</p>
             </div>
             <div className="panel-toolbar panel-toolbar--tight">
-              <button className="icon-button drag-button" type="button" aria-label="拖动窗口" data-tauri-drag-region>
+              <button
+                className="icon-button drag-button"
+                type="button"
+                aria-label={desktopLocked ? "窗口已锁定" : "拖动窗口"}
+                data-tauri-drag-region={desktopLocked ? undefined : true}
+                disabled={desktopLocked}
+              >
                 <GripHorizontal size={18} aria-hidden="true" />
               </button>
               <button
@@ -1153,8 +1186,11 @@ function App() {
                         aria-pressed={desktopLocked}
                         aria-label="切换锁定在桌面"
                         onClick={() => {
-                          setDesktopLocked((current) => !current);
-                          showNotice("锁定桌面状态已更新；真实窗口锁定需要在 Tauri 壳验证。");
+                          setDesktopLocked((current) => {
+                            const next = !current;
+                            showNotice(next ? "已锁定窗口拖动和尺寸调整。" : "已允许拖动和调整窗口。");
+                            return next;
+                          });
                         }}
                       />
                     </div>
@@ -1202,7 +1238,7 @@ function App() {
                         aria-label="切换鼠标穿透"
                         onClick={() => {
                           setMousePassthrough((current) => !current);
-                          showNotice("鼠标穿透是后续桌面壳能力，当前先记录设置意图。");
+                          showNotice("鼠标穿透已记录为后续选项；需要快捷解锁后再接入真实窗口能力。");
                         }}
                       />
                     </div>

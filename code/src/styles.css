@@ -485,9 +485,10 @@ button {
 
 .panel--glance-drawer {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   width: 100%;
   min-height: 100%;
-  align-content: start;
+  align-content: stretch;
   gap: 14px;
   padding: 20px;
   background: color-mix(in oklab, var(--surface-strong) 92%, black 8%);
@@ -572,6 +573,9 @@ button {
   display: grid;
   align-content: start;
   gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .event-card {
@@ -646,7 +650,9 @@ button {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  margin-top: 4px;
+  min-height: 28px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .toast {
@@ -668,9 +674,22 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  padding: 0;
   color: var(--muted-strong);
   font-size: 11px;
   letter-spacing: 0.08em;
+  background: transparent;
+  border: 0;
+}
+
+button.status-pill {
+  cursor: pointer;
+}
+
+button.status-pill:hover,
+button.status-pill:focus-visible {
+  color: var(--fg);
+  outline: none;
 }
 
 .status-pill i {

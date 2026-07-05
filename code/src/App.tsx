@@ -317,6 +317,7 @@ function App() {
   });
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [dropTargetDate, setDropTargetDate] = useState<string | null>(null);
+  const dragClickGuardUntil = useRef(0);
 
   const monthDates = useMemo(() => getMonthDates(currentMonth), [currentMonth]);
   const weekDates = useMemo(() => getRangeDates(selectedDate, 7), [selectedDate]);
@@ -463,7 +464,7 @@ function App() {
     setBoardItems((current) =>
       current.map((item) => (item.id === itemId ? { ...item, date: nextDate } : item)),
     );
-    selectDate(nextDate, true);
+    selectDate(nextDate, false);
   };
 
   const beginDragItem = (event: DragEvent<HTMLElement>, itemId: string) => {
@@ -471,10 +472,12 @@ function App() {
     event.dataTransfer.effectAllowed = "move";
     event.dataTransfer.setData("application/dayboard-item", JSON.stringify(payload));
     event.dataTransfer.setData("text/plain", itemId);
+    dragClickGuardUntil.current = Date.now() + 250;
     setDraggingItemId(itemId);
   };
 
   const endDragItem = () => {
+    dragClickGuardUntil.current = Date.now() + 250;
     setDraggingItemId(null);
     setDropTargetDate(null);
   };
@@ -526,6 +529,10 @@ function App() {
       }`}
       onClick={(event) => {
         event.stopPropagation();
+        if (Date.now() < dragClickGuardUntil.current) {
+          event.preventDefault();
+          return;
+        }
         openEdit(item);
       }}
       onDragStart={(event) => beginDragItem(event, item.id)}
@@ -772,7 +779,13 @@ function App() {
             </div>
 
             <div className="statusline" aria-label="账号连接状态">
-              <span className="status-pill status-pill--connected"><i />GMAIL · OUTLOOK</span>
+              <button
+                className="status-pill status-pill--connected"
+                type="button"
+                onClick={openAccountSettings}
+              >
+                <i />GMAIL · OUTLOOK
+              </button>
             </div>
           </section>
         )}

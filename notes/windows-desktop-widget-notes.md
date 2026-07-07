@@ -110,3 +110,24 @@ Electron BrowserWindow/BaseWindow 明确支持 alwaysOnTop、skipTaskbar、focus
 
 - `npm run build` 通过，可确认 React、TypeScript 和 Vite 构建正常。
 - `npm run tauri -- build --no-bundle` 未能执行，原因是当前系统找不到 `cargo`。需要安装 Rustup、MSVC Build Tools 和 Windows SDK 后再验证 Tauri 壳的真实窗口行为。
+
+## 2026-07-07 Tauri 桌面壳验证
+
+本机已补齐 Tauri Windows 构建环境：
+
+- Rustup / Cargo / Rustc：stable `x86_64-pc-windows-msvc`，`cargo 1.96.1`，`rustc 1.96.1`。
+- Visual Studio Build Tools 2022：`17.14.35`，包含 VC++ 工具链，MSVC 目录 `14.44.35207`。
+- 临时应用图标已加入 `code/src-tauri/icons/icon.ico`，用于解锁 Windows 资源生成；正式品牌图标后续替换。
+
+验证结果：
+
+- `npm run tauri -- build --no-bundle` 已通过。
+- 生成产物：`code/src-tauri/target/release/dayboard.exe`。
+- 已启动 release 产物，进程 `dayboard.exe` 存在，窗口标题为 `Dayboard`。
+
+仍需人工实机检查：
+
+- 透明窗口与无边框显示是否符合桌面贴片预期。
+- 托盘左键/右键菜单是否稳定。
+- `固定桌面`、`普通窗口`、`置顶` 在 Windows 桌面、多屏、全屏应用前后的真实层级表现。
+- 隐藏到托盘后能否可靠恢复。

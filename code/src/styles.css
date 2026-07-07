@@ -446,6 +446,13 @@ button {
   border-radius: 9px;
   font-size: 12px;
   line-height: 1.25;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.task-pill:active {
+  cursor: grabbing;
 }
 
 .calendar-cell--month .task-pill {

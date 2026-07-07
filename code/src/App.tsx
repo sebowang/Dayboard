@@ -12,7 +12,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { DragEvent, FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type WidgetMode = "month" | "week" | "fortnight";
 type WidgetSize = "compact" | "standard" | "wide";
@@ -57,9 +57,17 @@ type DragPayload = {
   itemId: string;
 };
 
+type PointerDragState = {
+  itemId: string;
+  pointerId: number;
+  startX: number;
+  startY: number;
+  active: boolean;
+};
+
 const STORAGE_KEYS = {
   items: "dayboard.items.v1",
-  settings: "dayboard.settings.v4",
+  settings: "dayboard.settings.v5",
 };
 
 const seedItems: DayboardItem[] = [
@@ -300,16 +308,25 @@ async function applyWindowBehavior(mode: PinMode, locked: boolean) {
   }
 }
 
-async function applyWidgetWindowSize(size: WidgetSize, hasDrawer: boolean) {
+async function startWindowDrag() {
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await getCurrentWindow().startDragging();
+  } catch {
+    return;
+  }
+}
+
+async function applyWidgetWindowSize(size: WidgetSize) {
   try {
     const { getCurrentWindow, LogicalSize } = await import("@tauri-apps/api/window");
-    const dimensions: Record<WidgetSize, { closed: number; open: number; height: number }> = {
-      compact: { closed: 900, open: 1140, height: 660 },
-      standard: { closed: 1120, open: 1390, height: 760 },
-      wide: { closed: 1360, open: 1620, height: 820 },
+    const dimensions: Record<WidgetSize, { width: number; height: number }> = {
+      compact: { width: 900, height: 660 },
+      standard: { width: 1120, height: 760 },
+      wide: { width: 1360, height: 820 },
     };
     const next = dimensions[size];
-    await getCurrentWindow().setSize(new LogicalSize(hasDrawer ? next.open : next.closed, next.height));
+    await getCurrentWindow().setSize(new LogicalSize(next.width, next.height));
   } catch {
     return;
   }
@@ -347,6 +364,7 @@ function App() {
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [dropTargetDate, setDropTargetDate] = useState<string | null>(null);
   const dragClickGuardUntil = useRef(0);
+  const pointerDrag = useRef<PointerDragState | null>(null);
 
   const monthDates = useMemo(() => getMonthDates(currentMonth), [currentMonth]);
   const weekDates = useMemo(() => getRangeDates(selectedDate, 7), [selectedDate]);
@@ -390,8 +408,8 @@ function App() {
   }, [pinMode, desktopLocked]);
 
   useEffect(() => {
-    void applyWidgetWindowSize(widgetSize, isGlanceOpen);
-  }, [widgetSize, isGlanceOpen]);
+    void applyWidgetWindowSize(widgetSize);
+  }, [widgetSize]);
 
   useEffect(() => {
     return () => {
@@ -432,13 +450,13 @@ function App() {
   };
 
   const openCreate = (date = selectedDate) => {
-    selectDate(date, true);
+    selectDate(date, false);
     setEditor({ mode: "create", draft: emptyDraft(date) });
   };
 
   const openEdit = (item: DayboardItem) => {
     const { id, ...draft } = item;
-    selectDate(item.date, true);
+    selectDate(item.date, false);
     setEditor({ mode: "edit", id, draft });
   };
 
@@ -453,7 +471,7 @@ function App() {
         title: editor.draft.title.trim(),
       };
       setBoardItems((current) => [...current, item]);
-      selectDate(item.date, true);
+      selectDate(item.date, false);
     } else {
       setBoardItems((current) =>
         current.map((item) =>
@@ -462,7 +480,7 @@ function App() {
             : item,
         ),
       );
-      selectDate(editor.draft.date, true);
+      selectDate(editor.draft.date, false);
     }
 
     setEditor(null);
@@ -543,6 +561,65 @@ function App() {
     endDragItem();
   };
 
+  const getDateKeyFromPoint = (x: number, y: number) => {
+    const target = document.elementFromPoint(x, y);
+    return target?.closest<HTMLElement>("[data-date-key]")?.dataset.dateKey ?? null;
+  };
+
+  const beginPointerDragItem = (event: PointerEvent<HTMLElement>, itemId: string) => {
+    if (event.button !== 0) return;
+    pointerDrag.current = {
+      itemId,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const movePointerDragItem = (event: PointerEvent<HTMLElement>) => {
+    const state = pointerDrag.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+
+    const distance = Math.hypot(event.clientX - state.startX, event.clientY - state.startY);
+    if (!state.active && distance < 6) return;
+
+    if (!state.active) {
+      state.active = true;
+      setDraggingItemId(state.itemId);
+      dragClickGuardUntil.current = Date.now() + 300;
+    }
+
+    event.preventDefault();
+    setDropTargetDate(getDateKeyFromPoint(event.clientX, event.clientY));
+  };
+
+  const finishPointerDragItem = (event: PointerEvent<HTMLElement>) => {
+    const state = pointerDrag.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+
+    if (state.active) {
+      event.preventDefault();
+      const targetDate = getDateKeyFromPoint(event.clientX, event.clientY) ?? dropTargetDate;
+      if (targetDate) moveItemToDate(state.itemId, targetDate);
+      dragClickGuardUntil.current = Date.now() + 300;
+    }
+
+    pointerDrag.current = null;
+    setDraggingItemId(null);
+    setDropTargetDate(null);
+  };
+
+  const cancelPointerDragItem = (event: PointerEvent<HTMLElement>) => {
+    const state = pointerDrag.current;
+    if (!state || state.pointerId !== event.pointerId) return;
+    pointerDrag.current = null;
+    dragClickGuardUntil.current = Date.now() + 300;
+    setDraggingItemId(null);
+    setDropTargetDate(null);
+  };
+
   const resetLocalData = () => {
     setBoardItems(seedItems);
     setWidgetMode(defaultSettings.widgetMode);
@@ -569,7 +646,7 @@ function App() {
     <button
       key={item.id}
       type="button"
-      draggable
+      draggable={false}
       className={`task-pill ${toneClass[item.calendar]} ${item.state === "done" ? "is-done" : ""} ${
         draggingItemId === item.id ? "is-dragging" : ""
       }`}
@@ -581,8 +658,10 @@ function App() {
         }
         openEdit(item);
       }}
-      onDragStart={(event) => beginDragItem(event, item.id)}
-      onDragEnd={endDragItem}
+      onPointerDown={(event) => beginPointerDragItem(event, item.id)}
+      onPointerMove={movePointerDragItem}
+      onPointerUp={finishPointerDragItem}
+      onPointerCancel={cancelPointerDragItem}
       title={item.title}
     >
       {!compact && <span>{item.start || (item.kind === "task" ? "TASK" : "全天")}</span>}
@@ -608,6 +687,7 @@ function App() {
     return (
       <article
         key={dateKey}
+        data-date-key={dateKey}
         className={cellClass}
         onDragOver={(event) => allowDropOnDate(event, dateKey)}
         onDragLeave={() => setDropTargetDate((current) => (current === dateKey ? null : current))}
@@ -647,7 +727,6 @@ function App() {
     >
       <section
         className={`widget-shell ${isGlanceOpen ? "widget-shell--drawer-open" : "widget-shell--drawer-closed"}`}
-        data-tauri-drag-region={desktopLocked ? undefined : true}
       >
         <aside className="panel panel--calendar panel--calendar-focus">
           <div className="panel-topline panel-topline--calendar-focus">
@@ -660,8 +739,12 @@ function App() {
                 className="icon-button drag-button"
                 type="button"
                 aria-label={desktopLocked ? "窗口已锁定" : "拖动窗口"}
-                data-tauri-drag-region={desktopLocked ? undefined : true}
                 disabled={desktopLocked}
+                onMouseDown={(event) => {
+                  if (desktopLocked || event.button !== 0) return;
+                  event.preventDefault();
+                  void startWindowDrag();
+                }}
               >
                 <GripHorizontal size={18} aria-hidden="true" />
               </button>

@@ -312,8 +312,9 @@ async function startWindowDrag() {
   try {
     const { getCurrentWindow } = await import("@tauri-apps/api/window");
     await getCurrentWindow().startDragging();
+    return true;
   } catch {
-    return;
+    return false;
   }
 }
 
@@ -642,6 +643,16 @@ function App() {
     showNotice("账号能力目前是 MVP 入口，真实 OAuth 会放到后续阶段。");
   };
 
+  const beginWindowDrag = (event: React.MouseEvent<HTMLElement>) => {
+    if (desktopLocked || event.button !== 0) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, select, textarea, [role='tablist']")) return;
+    event.preventDefault();
+    void startWindowDrag().then((started) => {
+      if (!started) showNotice("窗口拖动没有启动，请确认当前运行的是 Tauri 桌面版。");
+    });
+  };
+
   const renderItemChip = (item: DayboardItem, compact = false) => (
     <button
       key={item.id}
@@ -729,8 +740,16 @@ function App() {
         className={`widget-shell ${isGlanceOpen ? "widget-shell--drawer-open" : "widget-shell--drawer-closed"}`}
       >
         <aside className="panel panel--calendar panel--calendar-focus">
-          <div className="panel-topline panel-topline--calendar-focus">
-            <div className="panel-title-block panel-title-block--calendar">
+          <div
+            className={`panel-topline panel-topline--calendar-focus window-drag-zone ${
+              desktopLocked ? "is-locked" : ""
+            }`}
+            onMouseDown={beginWindowDrag}
+          >
+            <div
+              className="panel-title-block panel-title-block--calendar"
+              data-tauri-drag-region={desktopLocked ? undefined : true}
+            >
               <h1 className="panel-heading panel-heading--large">{monthTitle}</h1>
               <p className="calendar-period">{formatPeriodLabel(selectedDate)}</p>
             </div>
@@ -743,7 +762,9 @@ function App() {
                 onMouseDown={(event) => {
                   if (desktopLocked || event.button !== 0) return;
                   event.preventDefault();
-                  void startWindowDrag();
+                  void startWindowDrag().then((started) => {
+                    if (!started) showNotice("窗口拖动没有启动，请确认当前运行的是 Tauri 桌面版。");
+                  });
                 }}
               >
                 <GripHorizontal size={18} aria-hidden="true" />

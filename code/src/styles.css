@@ -194,6 +194,20 @@ button {
   align-items: center;
 }
 
+.window-drag-zone {
+  cursor: move;
+  user-select: none;
+}
+
+.window-drag-zone button,
+.window-drag-zone [role="tablist"] {
+  cursor: pointer;
+}
+
+.window-drag-zone.is-locked {
+  cursor: default;
+}
+
 .panel-title-block--calendar {
   min-width: 0;
 }

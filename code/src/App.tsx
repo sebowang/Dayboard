@@ -6,12 +6,14 @@ import {
   Circle,
   GripHorizontal,
   Link2,
+  Lock,
   Plus,
   Save,
   Settings,
   Trash2,
   X,
 } from "lucide-react";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { DragEvent, FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type WidgetMode = "month" | "week" | "fortnight";
@@ -302,7 +304,6 @@ async function hideWindow() {
 
 async function applyWindowBehavior(mode: PinMode, locked: boolean) {
   try {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
     const appWindow = getCurrentWindow();
     const run = (action: Promise<void>) => action.catch(() => undefined);
     await Promise.all([
@@ -318,7 +319,6 @@ async function applyWindowBehavior(mode: PinMode, locked: boolean) {
 
 async function startWindowDrag() {
   try {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
     await getCurrentWindow().startDragging();
     return true;
   } catch {
@@ -328,7 +328,6 @@ async function startWindowDrag() {
 
 async function applyWidgetWindowSize(size: WidgetSize) {
   try {
-    const { getCurrentWindow, LogicalSize } = await import("@tauri-apps/api/window");
     const dimensions: Record<WidgetSize, { width: number; height: number }> = {
       compact: { width: 900, height: 660 },
       standard: { width: 1120, height: 760 },
@@ -667,14 +666,8 @@ function App() {
     showNotice("账号能力目前是 MVP 入口，真实 OAuth 会放到后续阶段。");
   };
 
-  const beginWindowDrag = (event: React.MouseEvent<HTMLElement>) => {
-    if (desktopLocked || event.button !== 0) return;
-    const target = event.target as HTMLElement;
-    if (target.closest("button, input, select, textarea, [role='tablist']")) return;
-    event.preventDefault();
-    void startWindowDrag().then((started) => {
-      if (!started) showNotice("窗口拖动没有启动，请确认当前运行的是 Tauri 桌面版。");
-    });
+  const showLockedWindowHint = () => {
+    showNotice("窗口已锁定，可在设置里关闭“锁定窗口”后拖动。");
   };
 
   const renderItemChip = (item: DayboardItem, compact = false) => (
@@ -718,12 +711,19 @@ function App() {
       isSelected ? "calendar-cell--selected" : "",
       dropTargetDate === dateKey ? "calendar-cell--drop-target" : "",
     ].filter(Boolean).join(" ");
+    const openCreateFromBlank = (event: React.MouseEvent<HTMLElement>) => {
+      if (Date.now() < dragClickGuardUntil.current) return;
+      const target = event.target as HTMLElement;
+      if (target.closest(".calendar-cell__head, .task-pill")) return;
+      openCreate(dateKey);
+    };
 
     return (
       <article
         key={dateKey}
         data-date-key={dateKey}
         className={cellClass}
+        onClick={openCreateFromBlank}
         onDragOver={(event) => allowDropOnDate(event, dateKey)}
         onDragLeave={() => setDropTargetDate((current) => (current === dateKey ? null : current))}
         onDrop={(event) => dropItemOnDate(event, dateKey)}
@@ -748,7 +748,10 @@ function App() {
         <button
           type="button"
           className="blank-create"
-          onClick={() => openCreate(dateKey)}
+          onClick={(event) => {
+            event.stopPropagation();
+            openCreate(dateKey);
+          }}
           aria-label={`${date.getMonth() + 1} 月 ${date.getDate()} 日新增任务`}
         />
       </article>
@@ -764,34 +767,45 @@ function App() {
         className={`widget-shell ${isGlanceOpen ? "widget-shell--drawer-open" : "widget-shell--drawer-closed"}`}
       >
         <aside className="panel panel--calendar panel--calendar-focus">
-          <div
-            className={`panel-topline panel-topline--calendar-focus window-drag-zone ${
-              desktopLocked ? "is-locked" : ""
-            }`}
-            onMouseDown={beginWindowDrag}
-          >
+          <div className="panel-topline panel-topline--calendar-focus">
             <div
-              className="panel-title-block panel-title-block--calendar"
+              className={`panel-title-block panel-title-block--calendar window-drag-zone ${
+                desktopLocked ? "is-locked" : ""
+              }`}
               data-tauri-drag-region={desktopLocked ? undefined : true}
+              title={desktopLocked ? "窗口已锁定，可在设置里关闭后拖动" : "拖动窗口"}
+              onMouseDown={(event) => {
+                if (!desktopLocked || event.button !== 0) return;
+                event.preventDefault();
+                showLockedWindowHint();
+              }}
             >
-              <h1 className="panel-heading panel-heading--large">{monthTitle}</h1>
-              <p className="calendar-period">{formatPeriodLabel(selectedDate)}</p>
+              <h1 className="panel-heading panel-heading--large" data-tauri-drag-region={desktopLocked ? undefined : true}>
+                {monthTitle}
+              </h1>
+              <p className="calendar-period" data-tauri-drag-region={desktopLocked ? undefined : true}>
+                {formatPeriodLabel(selectedDate)}
+              </p>
             </div>
             <div className="panel-toolbar panel-toolbar--tight">
               <button
-                className="icon-button drag-button"
+                className={`icon-button drag-button ${desktopLocked ? "is-locked" : ""}`}
                 type="button"
-                aria-label={desktopLocked ? "窗口已锁定" : "拖动窗口"}
-                disabled={desktopLocked}
+                aria-label={desktopLocked ? "窗口已锁定，去设置关闭后可拖动" : "拖动窗口"}
+                title={desktopLocked ? "窗口已锁定，可在设置里关闭后拖动" : "拖动窗口"}
                 onMouseDown={(event) => {
-                  if (desktopLocked || event.button !== 0) return;
+                  if (event.button !== 0) return;
                   event.preventDefault();
+                  if (desktopLocked) {
+                    showLockedWindowHint();
+                    return;
+                  }
                   void startWindowDrag().then((started) => {
                     if (!started) showNotice("窗口拖动没有启动，请确认当前运行的是 Tauri 桌面版。");
                   });
                 }}
               >
-                <GripHorizontal size={18} aria-hidden="true" />
+                {desktopLocked ? <Lock size={17} aria-hidden="true" /> : <GripHorizontal size={18} aria-hidden="true" />}
               </button>
               <button
                 className={`icon-button icon-button--glance ${isGlanceOpen ? "is-active" : ""}`}

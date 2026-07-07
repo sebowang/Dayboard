@@ -195,13 +195,12 @@ button {
 }
 
 .window-drag-zone {
-  cursor: move;
+  cursor: grab;
   user-select: none;
 }
 
-.window-drag-zone button,
-.window-drag-zone [role="tablist"] {
-  cursor: pointer;
+.window-drag-zone:active {
+  cursor: grabbing;
 }
 
 .window-drag-zone.is-locked {
@@ -209,6 +208,11 @@ button {
 }
 
 .panel-title-block--calendar {
+  display: flex;
+  flex: 1;
+  align-self: stretch;
+  flex-direction: column;
+  justify-content: center;
   min-width: 0;
 }
 
@@ -272,6 +276,20 @@ button {
   color: color-mix(in oklab, var(--muted) 74%, transparent);
   background: rgba(255, 255, 255, 0.025);
   border-color: rgba(255, 255, 255, 0.05);
+}
+
+.drag-button.is-locked {
+  cursor: help;
+  color: color-mix(in oklab, var(--muted-strong) 88%, transparent);
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.075);
+}
+
+.drag-button.is-locked:hover,
+.drag-button.is-locked:focus-visible {
+  color: var(--fg);
+  background: rgba(117, 213, 232, 0.1);
+  border-color: rgba(117, 213, 232, 0.2);
 }
 
 .view-switch,
@@ -440,6 +458,7 @@ button {
   align-content: start;
   gap: 6px;
   min-width: 0;
+  pointer-events: none;
 }
 
 .task-pill {
@@ -461,6 +480,7 @@ button {
   font-size: 12px;
   line-height: 1.25;
   cursor: grab;
+  pointer-events: auto;
   user-select: none;
   touch-action: none;
 }
@@ -1316,11 +1336,13 @@ button.status-pill:focus-visible {
 
   .panel-topline {
     align-items: flex-start;
-    flex-direction: column;
+    flex-direction: row;
   }
 
   .panel-toolbar {
     flex-wrap: wrap;
+    justify-content: flex-end;
+    margin-left: auto;
   }
 
   .calendar-grid--monthly {

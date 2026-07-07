@@ -63,7 +63,15 @@ type PointerDragState = {
   startX: number;
   startY: number;
   active: boolean;
+  width: number;
 };
+
+type DragPreviewState = {
+  item: DayboardItem;
+  x: number;
+  y: number;
+  width: number;
+} | null;
 
 const STORAGE_KEYS = {
   items: "dayboard.items.v1",
@@ -364,6 +372,7 @@ function App() {
   });
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [dropTargetDate, setDropTargetDate] = useState<string | null>(null);
+  const [dragPreview, setDragPreview] = useState<DragPreviewState>(null);
   const dragClickGuardUntil = useRef(0);
   const pointerDrag = useRef<PointerDragState | null>(null);
 
@@ -567,14 +576,16 @@ function App() {
     return target?.closest<HTMLElement>("[data-date-key]")?.dataset.dateKey ?? null;
   };
 
-  const beginPointerDragItem = (event: PointerEvent<HTMLElement>, itemId: string) => {
+  const beginPointerDragItem = (event: PointerEvent<HTMLElement>, item: DayboardItem) => {
     if (event.button !== 0) return;
+    const bounds = event.currentTarget.getBoundingClientRect();
     pointerDrag.current = {
-      itemId,
+      itemId: item.id,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
       active: false,
+      width: Math.min(Math.max(bounds.width, 160), 260),
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -589,7 +600,18 @@ function App() {
     if (!state.active) {
       state.active = true;
       setDraggingItemId(state.itemId);
+      const item = boardItems.find((candidate) => candidate.id === state.itemId);
+      if (item) {
+        setDragPreview({
+          item,
+          x: event.clientX,
+          y: event.clientY,
+          width: state.width,
+        });
+      }
       dragClickGuardUntil.current = Date.now() + 300;
+    } else {
+      setDragPreview((current) => current && { ...current, x: event.clientX, y: event.clientY });
     }
 
     event.preventDefault();
@@ -610,6 +632,7 @@ function App() {
     pointerDrag.current = null;
     setDraggingItemId(null);
     setDropTargetDate(null);
+    setDragPreview(null);
   };
 
   const cancelPointerDragItem = (event: PointerEvent<HTMLElement>) => {
@@ -619,6 +642,7 @@ function App() {
     dragClickGuardUntil.current = Date.now() + 300;
     setDraggingItemId(null);
     setDropTargetDate(null);
+    setDragPreview(null);
   };
 
   const resetLocalData = () => {
@@ -669,7 +693,7 @@ function App() {
         }
         openEdit(item);
       }}
-      onPointerDown={(event) => beginPointerDragItem(event, item.id)}
+      onPointerDown={(event) => beginPointerDragItem(event, item)}
       onPointerMove={movePointerDragItem}
       onPointerUp={finishPointerDragItem}
       onPointerCancel={cancelPointerDragItem}
@@ -950,6 +974,21 @@ function App() {
       {toast && (
         <div className="toast" role="status" aria-live="polite">
           {toast}
+        </div>
+      )}
+
+      {dragPreview && (
+        <div
+          className={`task-drag-preview ${toneClass[dragPreview.item.calendar]}`}
+          style={{
+            left: dragPreview.x,
+            top: dragPreview.y,
+            width: dragPreview.width,
+          }}
+          aria-hidden="true"
+        >
+          <span>{dragPreview.item.start || (dragPreview.item.kind === "task" ? "TASK" : "全天")}</span>
+          <strong>{dragPreview.item.title}</strong>
         </div>
       )}
 

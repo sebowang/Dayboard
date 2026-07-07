@@ -59,7 +59,7 @@ type DragPayload = {
 
 const STORAGE_KEYS = {
   items: "dayboard.items.v1",
-  settings: "dayboard.settings.v3",
+  settings: "dayboard.settings.v4",
 };
 
 const seedItems: DayboardItem[] = [
@@ -140,7 +140,7 @@ const defaultSettings: AppSettings = {
   pinMode: "desktop",
   widgetSize: "standard",
   themeMode: "dark",
-  desktopLocked: true,
+  desktopLocked: false,
   autoStart: false,
   mousePassthrough: false,
 };
@@ -300,6 +300,21 @@ async function applyWindowBehavior(mode: PinMode, locked: boolean) {
   }
 }
 
+async function applyWidgetWindowSize(size: WidgetSize, hasDrawer: boolean) {
+  try {
+    const { getCurrentWindow, LogicalSize } = await import("@tauri-apps/api/window");
+    const dimensions: Record<WidgetSize, { closed: number; open: number; height: number }> = {
+      compact: { closed: 900, open: 1140, height: 660 },
+      standard: { closed: 1120, open: 1390, height: 760 },
+      wide: { closed: 1360, open: 1620, height: 820 },
+    };
+    const next = dimensions[size];
+    await getCurrentWindow().setSize(new LogicalSize(hasDrawer ? next.open : next.closed, next.height));
+  } catch {
+    return;
+  }
+}
+
 function App() {
   const [initialSettings] = useState<AppSettings>(loadSettings);
   const [widgetMode, setWidgetMode] = useState<WidgetMode>(initialSettings.widgetMode);
@@ -373,6 +388,10 @@ function App() {
   useEffect(() => {
     void applyWindowBehavior(pinMode, desktopLocked);
   }, [pinMode, desktopLocked]);
+
+  useEffect(() => {
+    void applyWidgetWindowSize(widgetSize, isGlanceOpen);
+  }, [widgetSize, isGlanceOpen]);
 
   useEffect(() => {
     return () => {

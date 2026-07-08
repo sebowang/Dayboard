@@ -740,10 +740,7 @@ function App() {
           <small>{dateItems.length ? `${dateItems.length} 项` : ""}</small>
         </button>
         <div className="calendar-cell__tasks">
-          {dateItems.slice(0, options.monthCell ? 2 : 3).map((item) => renderItemChip(item, options.monthCell))}
-          {dateItems.length > (options.monthCell ? 2 : 3) && (
-            <em className="more-count">+{dateItems.length - (options.monthCell ? 2 : 3)}</em>
-          )}
+          {dateItems.map((item) => renderItemChip(item, options.monthCell))}
         </div>
         <button
           type="button"

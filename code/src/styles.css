@@ -412,11 +412,26 @@ button {
   background: rgba(255, 255, 255, 0.025);
 }
 
-.calendar-cell--today,
-.calendar-cell--selected,
-.calendar-cell--drop-target {
+.calendar-cell--today {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(117, 213, 232, 0.22);
+}
+
+.calendar-cell--today .calendar-cell__day {
+  color: var(--accent);
+}
+
+.calendar-cell--selected {
   background: rgba(117, 213, 232, 0.1);
   border-color: rgba(117, 213, 232, 0.32);
+}
+
+.calendar-cell--selected .calendar-cell__day {
+  color: var(--fg);
+}
+
+.calendar-cell--selected:not(.calendar-cell--today) {
+  box-shadow: inset 0 0 0 1px rgba(117, 213, 232, 0.18);
 }
 
 .calendar-cell--drop-target {
@@ -443,11 +458,9 @@ button {
   line-height: 1;
 }
 
-.calendar-cell__head small,
-.more-count {
+.calendar-cell__head small {
   color: var(--muted);
   font-size: 10px;
-  font-style: normal;
   font-weight: 700;
 }
 
@@ -458,7 +471,49 @@ button {
   align-content: start;
   gap: 6px;
   min-width: 0;
-  pointer-events: none;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+  scrollbar-color: transparent transparent;
+  scrollbar-width: thin;
+}
+
+.calendar-cell__tasks:hover,
+.calendar-cell__tasks:focus-within,
+.calendar-cell__tasks:active {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.theme-light .calendar-cell__tasks:hover,
+.theme-light .calendar-cell__tasks:focus-within,
+.theme-light .calendar-cell__tasks:active {
+  scrollbar-color: rgba(31, 43, 46, 0.18) transparent;
+}
+
+.calendar-cell__tasks::-webkit-scrollbar {
+  width: 6px;
+}
+
+.calendar-cell__tasks::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.calendar-cell__tasks:hover::-webkit-scrollbar-thumb,
+.calendar-cell__tasks:focus-within::-webkit-scrollbar-thumb,
+.calendar-cell__tasks:active::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.theme-light .calendar-cell__tasks:hover::-webkit-scrollbar-thumb,
+.theme-light .calendar-cell__tasks:focus-within::-webkit-scrollbar-thumb,
+.theme-light .calendar-cell__tasks:active::-webkit-scrollbar-thumb {
+  background: rgba(31, 43, 46, 0.16);
+}
+
+.calendar-cell__tasks::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .task-pill {

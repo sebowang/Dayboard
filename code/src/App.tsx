@@ -179,7 +179,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState("");
   const toastTimer = useRef<number | null>(null);
-  const [retryMessage, setRetryMessage] = useState("Outlook 任务列表 16 分钟前同步失败，日历仍可正常显示。");
+  const [retryMessage, setRetryMessage] = useState("");
   const [syncOptions, setSyncOptions] = useState(initialSettings.syncOptions);
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [dropTargetDate, setDropTargetDate] = useState<string | null>(null);
@@ -223,7 +223,7 @@ function App() {
       mousePassthrough,
       syncOptions,
     });
-  }, [widgetMode, isGlanceOpen, opacity, pinMode, themeMode, desktopLocked, autoStart, mousePassthrough]);
+  }, [widgetMode, isGlanceOpen, opacity, pinMode, themeMode, desktopLocked, autoStart, mousePassthrough, syncOptions]);
 
   useEffect(() => {
     void applyWindowBehavior(pinMode, desktopLocked);
@@ -232,6 +232,20 @@ function App() {
   useEffect(() => {
     return () => {
       if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    };
+  }, []);
+
+  // Clean up pointer capture on unmount
+  useEffect(() => {
+    return () => {
+      if (pointerDrag.current?.active) {
+        try {
+          const el = document.elementFromPoint(pointerDrag.current.startX, pointerDrag.current.startY);
+          if (el && "releasePointerCapture" in el) {
+            (el as HTMLElement).releasePointerCapture(pointerDrag.current.pointerId);
+          }
+        } catch { /* best-effort */ }
+      }
     };
   }, []);
 
@@ -278,9 +292,7 @@ function App() {
         return;
       }
 
-      // Even if already connected (Strict Mode double-run), re-check
-      const alreadyConnected = isGoogleConnected();
-      console.log("[Dayboard::App] alreadyConnected:", alreadyConnected);
+      // Process OAuth callback (Strict Mode double-run guarded by oauthHandled ref)
 
       handleAuthCallback(url)
         .then(() => {
@@ -330,7 +342,7 @@ function App() {
   };
 
   const handleCloseEditor = () => {
-    if (!editor) { setEditor(null); return; }
+    if (!editor) return;
     if (editor.draft.title.trim() && !window.confirm("关闭将丢弃未保存的内容，确定吗？")) return;
     setEditor(null);
   };
@@ -343,7 +355,7 @@ function App() {
 
     if (editor.mode === "create") {
       const item: DayboardItem = {
-        id: `item-${Date.now()}`,
+        id: `item-${crypto.randomUUID()}`,
         ...draft,
       };
       setBoardItems((current) => [...current, item]);
@@ -438,7 +450,13 @@ function App() {
     setBoardItems((current) =>
       current.map((item) => (item.id === itemId ? { ...item, date: nextDate } : item)),
     );
-    selectDate(nextDate, false);
+    // Don't jump the view in month mode — just update items.
+    // In week/fortnight mode the user is focused on a narrow window so we follow.
+    if (widgetMode === "week" || widgetMode === "fortnight") {
+      selectDate(nextDate, false);
+    } else {
+      setSelectedDate(nextDate);
+    }
   };
 
   const beginDragItem = (event: DragEvent<HTMLElement>, itemId: string) => {
@@ -921,9 +939,9 @@ function App() {
               </button>
             </div>
 
-            <label className="field">
+            <label className="field" htmlFor="editor-title">
               <span>标题</span>
-              <input
+              <input id="editor-title"
                 value={editor.draft.title}
                 onChange={(event) => setDraftValue("title", event.target.value)}
                 required
@@ -932,18 +950,18 @@ function App() {
             </label>
 
             <div className="form-grid">
-              <label className="field">
+              <label className="field" htmlFor="editor-date">
                 <span>日期</span>
-                <input
+                <input id="editor-date"
                   type="date"
                   value={editor.draft.date}
                   onChange={(event) => setDraftValue("date", event.target.value)}
                   required
                 />
               </label>
-              <label className="field">
+              <label className="field" htmlFor="editor-kind">
                 <span>类型</span>
-                <select
+                <select id="editor-kind"
                   value={editor.draft.kind}
                   onChange={(event) => setDraftValue("kind", event.target.value as ItemKind)}
                 >
@@ -954,17 +972,17 @@ function App() {
             </div>
 
             <div className="form-grid">
-              <label className="field">
+              <label className="field" htmlFor="editor-start">
                 <span>开始</span>
-                <input
+                <input id="editor-start"
                   type="time"
                   value={editor.draft.start}
                   onChange={(event) => setDraftValue("start", event.target.value)}
                 />
               </label>
-              <label className="field">
+              <label className="field" htmlFor="editor-end">
                 <span>结束</span>
-                <input
+                <input id="editor-end"
                   type="time"
                   value={editor.draft.end}
                   onChange={(event) => setDraftValue("end", event.target.value)}
@@ -973,9 +991,9 @@ function App() {
             </div>
 
             <div className="form-grid">
-              <label className="field">
+              <label className="field" htmlFor="editor-calendar">
                 <span>日历</span>
-                <select
+                <select id="editor-calendar"
                   value={editor.draft.calendar}
                   onChange={(event) => setDraftValue("calendar", event.target.value as CalendarName)}
                 >
@@ -984,9 +1002,9 @@ function App() {
                   <option value="Outlook">Outlook</option>
                 </select>
               </label>
-              <label className="field">
+              <label className="field" htmlFor="editor-state">
                 <span>状态</span>
-                <select
+                <select id="editor-state"
                   value={editor.draft.state}
                   onChange={(event) => setDraftValue("state", event.target.value as TaskState)}
                 >
@@ -996,9 +1014,9 @@ function App() {
               </label>
             </div>
 
-            <label className="field">
+            <label className="field" htmlFor="editor-note">
               <span>备注</span>
-              <textarea
+              <textarea id="editor-note"
                 value={editor.draft.note}
                 onChange={(event) => setDraftValue("note", event.target.value)}
                 rows={3}
@@ -1091,8 +1109,8 @@ function App() {
                         setSyncing(true);
                         try {
                           const events = await fetchCalendarEvents(
-                            new Date(Date.now() - 7 * 864e5).toISOString(),
-                            new Date(Date.now() + 30 * 864e5).toISOString()
+                            (() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - 7); return d.toISOString(); })(),
+                            (() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 37); return d.toISOString(); })()
                           );
                           // Convert Google Calendar events to Dayboard items
                           const imported: DayboardItem[] = events.map((evt) => {

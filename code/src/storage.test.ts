@@ -55,6 +55,22 @@ describe("loadItems", () => {
     const items = loadItems();
     expect(items).toEqual(seedItems);
   });
+
+  it("filters out items missing required fields", () => {
+    const valid: DayboardItem = { id: "1", title: "Good", date: "2026-07-11", start: "", end: "", kind: "task", state: "open", calendar: "Local", note: "" };
+    const bad1 = { id: 123, title: "Bad", date: "2026-07-11", start: "", end: "", kind: "task", state: "open", calendar: "Local", note: "" };
+    const bad2 = { id: "2", date: "2026-07-11", start: "", end: "", kind: "task", state: "open", calendar: "Local", note: "" };
+    const bad3 = { id: "3", title: "Bad", date: "2026-07-11", start: "", end: "", kind: "invalid", state: "open", calendar: "Local", note: "" };
+    saveItems([valid, bad1 as any, bad2 as any, bad3 as any]);
+    const items = loadItems();
+    expect(items).toEqual([valid]);
+  });
+
+  it("falls back to seed items when all items are invalid", () => {
+    const bad = { id: 1, title: "Bad", date: "2026-07-11" };
+    saveItems([bad as any]);
+    expect(loadItems()).toEqual(seedItems);
+  });
 });
 
 describe("saveItems", () => {
@@ -94,7 +110,7 @@ describe("loadSettings", () => {
 
   it("normalizes unknown widgetMode", () => {
     store.set(STORAGE_KEYS.settings, JSON.stringify({ widgetMode: "biweek" }));
-    expect(loadSettings().widgetMode).toBe("fortnight");
+    expect(loadSettings().widgetMode).toBe("month"); // unknown → default
   });
 
   it("normalizes unknown themeMode", () => {

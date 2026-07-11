@@ -128,7 +128,6 @@ export const seedItems: DayboardItem[] = [
 
 const normalizeMode = (value: unknown): WidgetMode => {
   if (value === "week" || value === "fortnight" || value === "month") return value;
-  if (value === "biweek") return "fortnight";
   return defaultSettings.widgetMode;
 };
 
@@ -139,12 +138,32 @@ const normalizeTheme = (value: unknown): ThemeMode => {
 
 /* ---- load ---- */
 
+/**
+ * Validate a loaded item shape — reject items missing required fields.
+ * Guards against corrupted localStorage data.
+ */
+const isValidItem = (item: unknown): item is DayboardItem => {
+  if (!item || typeof item !== "object") return false;
+  const o = item as Record<string, unknown>;
+  return (
+    typeof o.id === "string" && o.id.length > 0 &&
+    typeof o.title === "string" &&
+    typeof o.date === "string" &&
+    (o.kind === "event" || o.kind === "task") &&
+    (o.state === "open" || o.state === "done") &&
+    (o.calendar === "Local" || o.calendar === "Gmail" || o.calendar === "Outlook")
+  );
+};
+
 export const loadItems = (): DayboardItem[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.items);
     if (!raw) return seedItems;
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as DayboardItem[]) : seedItems;
+    if (!Array.isArray(parsed)) return seedItems;
+    const valid = parsed.filter(isValidItem);
+    if (valid.length === 0) return seedItems;
+    return valid as DayboardItem[];
   } catch {
     return seedItems;
   }
@@ -152,9 +171,14 @@ export const loadItems = (): DayboardItem[] => {
 
 export const loadSettings = (): AppSettings => {
   try {
-    const raw =
-      localStorage.getItem(STORAGE_KEYS.settings) ??
-      localStorage.getItem("dayboard.settings.v2");
+    let raw = localStorage.getItem(STORAGE_KEYS.settings);
+    if (raw) {
+      // Migration complete — clean up old v2 key
+      try { localStorage.removeItem("dayboard.settings.v2"); } catch { /* noop */ }
+    } else {
+      // Fall back to v2 key for legacy users
+      raw = localStorage.getItem("dayboard.settings.v2");
+    }
     if (!raw) return defaultSettings;
     const parsed = JSON.parse(raw);
     return {

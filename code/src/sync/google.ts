@@ -1,6 +1,6 @@
 // Google Calendar sync module for Dayboard
-// OAuth 2.0 with PKCE (S256). code_verifier is encoded in the OAuth state
-// parameter so it survives the roundtrip.
+// OAuth 2.0 with PKCE (S256). code_verifier is stored in sessionStorage
+// keyed by a random stateId; only the stateId goes into the OAuth URL.
 
 // ---------------------------------------------------------------------------
 // Types
@@ -33,7 +33,6 @@ interface TokenSet {
 
 export const GOOGLE_AUTH_CONFIG = {
   clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || "",
-  clientSecret: import.meta.env.VITE_GOOGLE_CLIENT_SECRET || "",
   redirectUri: "http://127.0.0.1:1420/oauth/google/callback",
   scopes: ["https://www.googleapis.com/auth/calendar.events"],
   authEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -64,9 +63,10 @@ function oauthLog(step: string, detail?: unknown): void {
   const entry = `[${ts}] ${step}`;
   console.log(entry, detail ?? "");
   try {
-    // Append so we keep history
     const prev = localStorage.getItem(LOG_KEY) ?? "";
-    localStorage.setItem(LOG_KEY, prev + entry + "\n");
+    const lines = (prev + entry).split("\n");
+    // Cap at 50 most recent lines
+    localStorage.setItem(LOG_KEY, lines.slice(-50).join("\n") + "\n");
   } catch { /* noop */ }
 }
 
@@ -136,11 +136,17 @@ function clearTokenSet(): void {
 // Public API
 // ---------------------------------------------------------------------------
 
+const OAUTH_STATE_PREFIX = "dayboard.oauth.";
+
 export async function getAuthUrl(): Promise<string> {
   oauthLog("getAuthUrl: generating code_verifier");
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = await sha256Base64Url(codeVerifier);
-  const state = "v1:" + codeVerifier;
+
+  // Store verifier in sessionStorage under a random key.
+  // Only the random stateId goes into the URL — the secret stays local.
+  const stateId = crypto.randomUUID();
+  try { sessionStorage.setItem(OAUTH_STATE_PREFIX + stateId, codeVerifier); } catch {}
 
   const params = new URLSearchParams({
     client_id: GOOGLE_AUTH_CONFIG.clientId,
@@ -149,7 +155,7 @@ export async function getAuthUrl(): Promise<string> {
     scope: GOOGLE_AUTH_CONFIG.scopes.join(" "),
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
-    state,
+    state: stateId,
     access_type: "offline",
     prompt: "consent",
   });
@@ -164,9 +170,9 @@ export async function handleAuthCallback(url: string): Promise<void> {
   const parsed = new URL(url);
   const error = parsed.searchParams.get("error");
   const code = parsed.searchParams.get("code");
-  const state = parsed.searchParams.get("state");
+  const stateId = parsed.searchParams.get("state");
 
-  oauthLog("handleAuthCallback: error=" + error + ", hasCode=" + !!code + ", hasState=" + !!state);
+  oauthLog("handleAuthCallback: error=" + error + ", hasCode=" + !!code + ", hasState=" + !!stateId);
 
   if (error) {
     oauthLog("handleAuthCallback: Google returned error: " + error);
@@ -176,13 +182,21 @@ export async function handleAuthCallback(url: string): Promise<void> {
     oauthLog("handleAuthCallback: NO_CODE");
     throw new GoogleSyncError("NO_CODE", "No authorization code in callback URL");
   }
-  if (!state || !state.startsWith("v1:")) {
-    oauthLog("handleAuthCallback: invalid state param: " + (state ?? "null"));
-    throw new GoogleSyncError("NO_VERIFIER", "Missing or invalid state parameter: " + (state ?? "null"));
+  if (!stateId) {
+    oauthLog("handleAuthCallback: missing state param (CSRF)");
+    throw new GoogleSyncError("NO_VERIFIER", "Missing state parameter — possible CSRF attack");
   }
 
-  const codeVerifier = state.slice(3);
-  oauthLog("handleAuthCallback: code_verifier extracted, len=" + codeVerifier.length);
+  // Retrieve code_verifier from sessionStorage using the stateId as key.
+  // The verifier was never in the URL — this prevents logging leakage and CSRF.
+  const codeVerifier = (() => { try { return sessionStorage.getItem(OAUTH_STATE_PREFIX + stateId); } catch { return null; } })();
+  try { sessionStorage.removeItem(OAUTH_STATE_PREFIX + stateId); } catch {}
+
+  if (!codeVerifier) {
+    oauthLog("handleAuthCallback: no verifier for stateId (expired or forged)");
+    throw new GoogleSyncError("NO_VERIFIER", "Session expired or invalid state — re-authenticate.");
+  }
+  oauthLog("handleAuthCallback: code_verifier retrieved from sessionStorage, len=" + codeVerifier.length);
 
   oauthLog("handleAuthCallback: exchanging code for token...");
   const response = await fetch(GOOGLE_AUTH_CONFIG.tokenEndpoint, {
@@ -190,7 +204,6 @@ export async function handleAuthCallback(url: string): Promise<void> {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       client_id: GOOGLE_AUTH_CONFIG.clientId,
-      client_secret: GOOGLE_AUTH_CONFIG.clientSecret,
       redirect_uri: GOOGLE_AUTH_CONFIG.redirectUri,
       grant_type: "authorization_code",
       code,
@@ -216,6 +229,8 @@ export async function handleAuthCallback(url: string): Promise<void> {
   oauthLog("handleAuthCallback: token_set SAVED to localStorage");
 }
 
+let _refreshPromise: Promise<TokenSet> | null = null;
+
 export async function getValidToken(): Promise<string | null> {
   const tokens = readTokenSet();
   if (!tokens) return null;
@@ -224,24 +239,40 @@ export async function getValidToken(): Promise<string | null> {
     clearTokenSet();
     throw new GoogleSyncError("NO_REFRESH_TOKEN", "No refresh token — re-authenticate.");
   }
-  const response = await fetch(GOOGLE_AUTH_CONFIG.tokenEndpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      client_id: GOOGLE_AUTH_CONFIG.clientId,
-      client_secret: GOOGLE_AUTH_CONFIG.clientSecret,
-      grant_type: "refresh_token",
-      refresh_token: tokens.refresh_token,
-    }),
-  });
-  if (!response.ok) { clearTokenSet(); throw new GoogleSyncError("REFRESH_FAILED", await response.text()); }
-  const data = await response.json();
-  const updated: TokenSet = {
-    access_token: data.access_token,
-    refresh_token: data.refresh_token ?? tokens.refresh_token,
-    expires_at: Date.now() + (data.expires_in ?? 3600) * 1000,
-  };
-  saveTokenSet(updated);
+  // Deduplicate concurrent refresh attempts
+  if (!_refreshPromise) {
+    _refreshPromise = (async () => {
+      const response = await fetch(GOOGLE_AUTH_CONFIG.tokenEndpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: GOOGLE_AUTH_CONFIG.clientId,
+          grant_type: "refresh_token",
+          refresh_token: tokens.refresh_token ?? "",
+        }),
+      });
+      if (!response.ok) {
+        // Clear tokens on auth errors; 429 (rate limit) keeps tokens for retry.
+        if (response.status === 400 || response.status === 401 || response.status === 403) {
+          clearTokenSet();
+        }
+        const text = await response.text();
+        _refreshPromise = null;
+        throw new GoogleSyncError("REFRESH_FAILED", text);
+      }
+      const data = await response.json();
+      const updated: TokenSet = {
+        access_token: data.access_token,
+        refresh_token: data.refresh_token ?? tokens.refresh_token,
+        expires_at: Date.now() + (data.expires_in ?? 3600) * 1000,
+      };
+      saveTokenSet(updated);
+      oauthLog("getValidToken: refreshed, expires_at=" + updated.expires_at);
+      return updated;
+    })();
+  }
+  const updated = await _refreshPromise;
+  _refreshPromise = null;
   return updated.access_token;
 }
 
@@ -266,8 +297,10 @@ export async function createGoogleEvent(event: {
   };
 
   if (isAllDay) {
+    const nextDay = new Date(event.date + "T00:00:00");
+    nextDay.setDate(nextDay.getDate() + 1);
     body.start = { date: event.date };
-    body.end = { date: event.date };
+    body.end = { date: nextDay.toISOString().slice(0, 10) };
   } else {
     body.start = { dateTime: `${event.date}T${event.start}:00+08:00`, timeZone: "Asia/Shanghai" };
     body.end = { dateTime: `${event.date}T${event.end}:00+08:00`, timeZone: "Asia/Shanghai" };
@@ -303,8 +336,10 @@ export async function updateGoogleEvent(googleEventId: string, event: {
   };
 
   if (isAllDay) {
+    const nextDay = new Date(event.date + "T00:00:00");
+    nextDay.setDate(nextDay.getDate() + 1);
     body.start = { date: event.date };
-    body.end = { date: event.date };
+    body.end = { date: nextDay.toISOString().slice(0, 10) };
   } else {
     body.start = { dateTime: `${event.date}T${event.start}:00+08:00`, timeZone: "Asia/Shanghai" };
     body.end = { dateTime: `${event.date}T${event.end}:00+08:00`, timeZone: "Asia/Shanghai" };

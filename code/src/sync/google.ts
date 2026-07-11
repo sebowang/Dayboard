@@ -245,6 +245,99 @@ export async function getValidToken(): Promise<string | null> {
   return updated.access_token;
 }
 
+/**
+ * Create a new event on the user's primary Google Calendar.
+ * Returns the created event's Google ID.
+ */
+export async function createGoogleEvent(event: {
+  title: string;
+  date: string;       // YYYY-MM-DD
+  start?: string;     // HH:MM
+  end?: string;       // HH:MM
+  note?: string;
+}): Promise<string> {
+  const token = await getValidToken();
+  if (!token) throw new GoogleSyncError("UNAUTHENTICATED", "No valid token.");
+
+  const isAllDay = !event.start || !event.end;
+  const body: Record<string, unknown> = {
+    summary: event.title,
+    description: event.note ?? "",
+  };
+
+  if (isAllDay) {
+    body.start = { date: event.date };
+    body.end = { date: event.date };
+  } else {
+    body.start = { dateTime: `${event.date}T${event.start}:00+08:00`, timeZone: "Asia/Shanghai" };
+    body.end = { dateTime: `${event.date}T${event.end}:00+08:00`, timeZone: "Asia/Shanghai" };
+  }
+
+  const resp = await fetch("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!resp.ok) throw new GoogleSyncError("CREATE_EVENT_FAILED", await resp.text());
+  const data = await resp.json();
+  return data.id as string;
+}
+
+/**
+ * Update an existing event on Google Calendar.
+ */
+export async function updateGoogleEvent(googleEventId: string, event: {
+  title: string;
+  date: string;
+  start?: string;
+  end?: string;
+  note?: string;
+}): Promise<void> {
+  const token = await getValidToken();
+  if (!token) throw new GoogleSyncError("UNAUTHENTICATED", "No valid token.");
+
+  const isAllDay = !event.start || !event.end;
+  const body: Record<string, unknown> = {
+    summary: event.title,
+    description: event.note ?? "",
+  };
+
+  if (isAllDay) {
+    body.start = { date: event.date };
+    body.end = { date: event.date };
+  } else {
+    body.start = { dateTime: `${event.date}T${event.start}:00+08:00`, timeZone: "Asia/Shanghai" };
+    body.end = { dateTime: `${event.date}T${event.end}:00+08:00`, timeZone: "Asia/Shanghai" };
+  }
+
+  const resp = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(googleEventId)}`,
+    {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+  if (!resp.ok) throw new GoogleSyncError("UPDATE_EVENT_FAILED", await resp.text());
+}
+
+/**
+ * Delete an event from Google Calendar.
+ */
+export async function deleteGoogleEvent(googleEventId: string): Promise<void> {
+  const token = await getValidToken();
+  if (!token) throw new GoogleSyncError("UNAUTHENTICATED", "No valid token.");
+
+  const resp = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(googleEventId)}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+  if (!resp.ok) throw new GoogleSyncError("DELETE_EVENT_FAILED", await resp.text());
+}
+
 export async function fetchCalendarEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
   const token = await getValidToken();
   if (!token) throw new GoogleSyncError("UNAUTHENTICATED", "No valid token — authenticate first.");

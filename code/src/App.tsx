@@ -15,7 +15,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { DragEvent, FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { type AppSettings, type CalendarName, type DayboardItem, type DraftItem, type EffectiveTheme, type ItemKind, type PinMode, type TaskState, type ThemeMode, type WidgetMode, defaultSettings, loadItems, loadSettings, resetToSeedItems, saveItems, saveSettings, seedItems, STORAGE_KEYS } from "./storage";
 
-import { getAuthUrl, handleAuthCallback, isGoogleConnected, disconnectGoogle, fetchCalendarEvents, readOauthLog } from "./sync/google";
+import { getAuthUrl, handleAuthCallback, isGoogleConnected, disconnectGoogle, fetchCalendarEvents, readOauthLog, createGoogleEvent, updateGoogleEvent, deleteGoogleEvent } from "./sync/google";
 type EditorState =
   | { mode: "create"; draft: DraftItem }
   | { mode: "edit"; id: string; draft: DraftItem }
@@ -332,23 +332,52 @@ function App() {
     event.preventDefault();
     if (!editor || !editor.draft.title.trim()) return;
 
+    const draft = { ...editor.draft, title: editor.draft.title.trim() };
+
     if (editor.mode === "create") {
       const item: DayboardItem = {
         id: `item-${Date.now()}`,
-        ...editor.draft,
-        title: editor.draft.title.trim(),
+        ...draft,
       };
       setBoardItems((current) => [...current, item]);
       selectDate(item.date, false);
+
+      // Push to Google if the item is a Gmail event
+      if (item.calendar === "Gmail" && googleConnected) {
+        createGoogleEvent({
+          title: item.title,
+          date: item.date,
+          start: item.start || undefined,
+          end: item.end || undefined,
+          note: item.note || undefined,
+        })
+          .then((googleId) => {
+            setBoardItems((current) =>
+              current.map((i) => (i.id === item.id ? { ...i, id: "gcal-" + googleId } : i))
+            );
+          })
+          .catch((err: Error) => showNotice("Google 同步失败: " + err.message));
+      }
     } else {
       setBoardItems((current) =>
         current.map((item) =>
           item.id === editor.id
-            ? { id: editor.id, ...editor.draft, title: editor.draft.title.trim() }
+            ? { id: editor.id, ...draft }
             : item,
         ),
       );
-      selectDate(editor.draft.date, false);
+      selectDate(draft.date, false);
+
+      // Push update to Google for Gmail-sourced items
+      if (draft.calendar === "Gmail" && editor.id.startsWith("gcal-") && googleConnected) {
+        updateGoogleEvent(editor.id.slice(5), {
+          title: draft.title,
+          date: draft.date,
+          start: draft.start || undefined,
+          end: draft.end || undefined,
+          note: draft.note || undefined,
+        }).catch((err: Error) => showNotice("Google 同步失败: " + err.message));
+      }
     }
 
     setEditor(null);
@@ -356,8 +385,17 @@ function App() {
 
   const deleteItem = () => {
     if (!editor || editor.mode !== "edit") return;
-    setBoardItems((current) => current.filter((item) => item.id !== editor.id));
+    const itemId = editor.id;
+    const item = boardItems.find((i) => i.id === itemId);
+    setBoardItems((current) => current.filter((i) => i.id !== itemId));
     setEditor(null);
+
+    // Delete from Google for Gmail-sourced items
+    if (item && item.calendar === "Gmail" && itemId.startsWith("gcal-") && googleConnected) {
+      deleteGoogleEvent(itemId.slice(5)).catch((err: Error) =>
+        showNotice("Google " + err.message)
+      );
+    }
   };
 
   const toggleDone = (id: string) => {

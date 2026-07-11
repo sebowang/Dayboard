@@ -1045,7 +1045,38 @@ function App() {
                             new Date(Date.now() - 7 * 864e5).toISOString(),
                             new Date(Date.now() + 30 * 864e5).toISOString()
                           );
-                          showNotice(`已同步 ${events.length} 个日历事件。`);
+                          // Convert Google Calendar events to Dayboard items
+                          const imported: DayboardItem[] = events.map((evt) => {
+                            const dateStr = evt.start?.date
+                              ? evt.start.date
+                              : (evt.start?.dateTime
+                                ? evt.start.dateTime.slice(0, 10)
+                                : new Date().toISOString().slice(0, 10));
+                            const startTime = evt.start?.dateTime
+                              ? evt.start.dateTime.slice(11, 16)
+                              : "";
+                            const endTime = evt.end?.dateTime
+                              ? evt.end.dateTime.slice(11, 16)
+                              : "";
+                            return {
+                              id: "gcal-" + evt.id,
+                              title: evt.summary || "(无标题)",
+                              date: dateStr,
+                              start: evt.start?.date ? "" : startTime,
+                              end: evt.start?.date ? "" : endTime,
+                              kind: "event" as const,
+                              state: "open" as const,
+                              calendar: "Gmail" as const,
+                              note: evt.description ?? "",
+                            };
+                          });
+                          // Merge: replace any existing Google events with new ones,
+                          // keep local items unchanged
+                          setBoardItems((current) => {
+                            const localOnly = current.filter((i) => i.calendar !== "Gmail");
+                            return [...localOnly, ...imported];
+                          });
+                          showNotice("已同步 " + imported.length + " 个 Google 日历事件。");
                         } catch (err) {
                           showNotice("同步失败: " + (err as Error).message);
                         } finally {

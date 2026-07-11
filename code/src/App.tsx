@@ -260,9 +260,6 @@ function App() {
       const error = parsed.searchParams.get("error");
       const code = parsed.searchParams.get("code");
 
-      // Clean the URL first so a refresh doesn't re-trigger.
-      window.history.replaceState({}, "", "/");
-
       console.log("[Dayboard::App] error param:", error, "code present:", !!code);
 
       if (error) {
@@ -270,6 +267,7 @@ function App() {
         console.error("[Dayboard::App]", msg);
         setLastOauthLog(msg);
         showNotice("Google " + msg);
+        window.history.replaceState({}, "", "/");
         return;
       }
       if (!code) {
@@ -285,6 +283,7 @@ function App() {
       handleAuthCallback(url)
         .then(() => {
           console.log("[Dayboard::App] handleAuthCallback SUCCESS");
+          window.history.replaceState({}, "", "/");
           setGoogleConnected(true);
           setLastOauthLog("Success at " + new Date().toLocaleTimeString());
           showNotice("Google 日历已连接。");

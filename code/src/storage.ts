@@ -167,11 +167,19 @@ export const loadSettings = (): AppSettings => {
 /* ---- save ---- */
 
 export const saveItems = (items: DayboardItem[]): void => {
-  localStorage.setItem(STORAGE_KEYS.items, JSON.stringify(items));
+  try {
+    localStorage.setItem(STORAGE_KEYS.items, JSON.stringify(items));
+  } catch (e) {
+    console.error("[storage] saveItems failed:", e);
+  }
 };
 
 export const saveSettings = (settings: AppSettings): void => {
-  localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
+  try {
+    localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
+  } catch (e) {
+    console.error("[storage] saveSettings failed:", e);
+  }
 };
 
 /* ---- reset ---- */

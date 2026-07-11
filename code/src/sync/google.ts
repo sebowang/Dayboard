@@ -338,10 +338,17 @@ export async function deleteGoogleEvent(googleEventId: string): Promise<void> {
   if (!resp.ok) throw new GoogleSyncError("DELETE_EVENT_FAILED", await resp.text());
 }
 
-export async function fetchCalendarEvents(startDate: string, endDate: string): Promise<CalendarEvent[]> {
+/**
+ * Fetch events from a specific calendar.
+ */
+export async function fetchEventsFromCalendar(
+  calendarId: string,
+  startDate: string,
+  endDate: string
+): Promise<CalendarEvent[]> {
   const token = await getValidToken();
   if (!token) throw new GoogleSyncError("UNAUTHENTICATED", "No valid token — authenticate first.");
-  const url = new URL("https://www.googleapis.com/calendar/v3/calendars/primary/events");
+  const url = new URL(`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`);
   url.searchParams.set("timeMin", startDate);
   url.searchParams.set("timeMax", endDate);
   url.searchParams.set("singleEvents", "true");
@@ -350,6 +357,33 @@ export async function fetchCalendarEvents(startDate: string, endDate: string): P
   if (!response.ok) throw new GoogleSyncError("FETCH_EVENTS_FAILED", await response.text());
   const data = await response.json();
   return data.items ?? [];
+}
+
+/**
+ * Fetch events from all available calendars (or primary only as fallback).
+ * @param calendarIds — specific calendar IDs to fetch, or undefined for all.
+ */
+export async function fetchCalendarEvents(
+  startDate: string,
+  endDate: string,
+  calendarIds?: string[]
+): Promise<CalendarEvent[]> {
+  const token = await getValidToken();
+  if (!token) throw new GoogleSyncError("UNAUTHENTICATED", "No valid token — authenticate first.");
+
+  // If no specific calendars requested, fetch from all available
+  const ids = calendarIds ?? (await listCalendars()).map((c) => c.id);
+  const allEvents: CalendarEvent[] = [];
+  for (const id of ids) {
+    try {
+      const events = await fetchEventsFromCalendar(id, startDate, endDate);
+      allEvents.push(...events);
+    } catch (err) {
+      // Skip failing calendars (e.g., deleted but still in list)
+      console.warn("[google] Failed to fetch from calendar", id, err);
+    }
+  }
+  return allEvents;
 }
 
 export async function listCalendars(): Promise<CalendarEntry[]> {

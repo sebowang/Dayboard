@@ -8,6 +8,7 @@ use tauri::{
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             let show = MenuItem::with_id(app, "show", "显示 Dayboard", true, None::<&str>)?;
             let hide = MenuItem::with_id(app, "hide", "隐藏", true, None::<&str>)?;

@@ -16,7 +16,6 @@ import { DragEvent, FormEvent, PointerEvent, useEffect, useMemo, useRef, useStat
 import { type AppSettings, type CalendarName, type DayboardItem, type DraftItem, type EffectiveTheme, type ItemKind, type PinMode, type TaskState, type ThemeMode, type WidgetMode, defaultSettings, loadItems, loadSettings, resetToSeedItems, saveItems, saveSettings, seedItems, STORAGE_KEYS } from "./storage";
 
 import { getAuthUrl, handleAuthCallback, isGoogleConnected, disconnectGoogle, fetchCalendarEvents } from "./sync/google";
-import { open } from "@tauri-apps/plugin-shell";
 type EditorState =
   | { mode: "create"; draft: DraftItem }
   | { mode: "edit"; id: string; draft: DraftItem }
@@ -502,11 +501,12 @@ function App() {
     setGoogleConnecting(true);
     try {
       const authUrl = await getAuthUrl();
-      await open(authUrl);
-      showNotice("请在浏览器中完成 Google 授权。");
+      // Navigate the app window to Google OAuth.
+      // Google redirects back to 127.0.0.1:1420/oauth/google/callback
+      // which the mount-time useEffect will handle in the same webview session.
+      window.location.href = authUrl;
     } catch (err) {
       showNotice("无法启动 Google 授权: " + (err as Error).message);
-    } finally {
       setGoogleConnecting(false);
     }
   };

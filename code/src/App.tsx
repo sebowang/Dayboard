@@ -4,20 +4,17 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
-  GripHorizontal,
   Link2,
-  Lock,
   Plus,
   Save,
   Settings,
   Trash2,
   X,
 } from "lucide-react";
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { DragEvent, FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type WidgetMode = "month" | "week" | "fortnight";
-type WidgetSize = "compact" | "standard" | "wide";
 type ThemeMode = "dark" | "light" | "system";
 type EffectiveTheme = "dark" | "light";
 type TaskState = "open" | "done";
@@ -48,7 +45,6 @@ type AppSettings = {
   isGlanceOpen: boolean;
   opacity: number;
   pinMode: PinMode;
-  widgetSize: WidgetSize;
   themeMode: ThemeMode;
   desktopLocked: boolean;
   autoStart: boolean;
@@ -156,7 +152,6 @@ const defaultSettings: AppSettings = {
   isGlanceOpen: false,
   opacity: 88,
   pinMode: "desktop",
-  widgetSize: "standard",
   themeMode: "dark",
   desktopLocked: false,
   autoStart: false,
@@ -242,11 +237,6 @@ const normalizeMode = (value: unknown): WidgetMode => {
   return defaultSettings.widgetMode;
 };
 
-const normalizeSize = (value: unknown): WidgetSize => {
-  if (value === "compact" || value === "standard" || value === "wide") return value;
-  return defaultSettings.widgetSize;
-};
-
 const normalizeTheme = (value: unknown): ThemeMode => {
   if (value === "dark" || value === "light" || value === "system") return value;
   return defaultSettings.themeMode;
@@ -276,7 +266,6 @@ const loadSettings = () => {
       ...parsed,
       widgetMode: normalizeMode(parsed.widgetMode ?? parsed.widgetModePreference),
       isGlanceOpen: Boolean(parsed.isGlanceOpen ?? parsed.isTaskPanelOpen),
-      widgetSize: normalizeSize(parsed.widgetSize),
       themeMode: normalizeTheme(parsed.themeMode),
       desktopLocked: Boolean(parsed.desktopLocked ?? defaultSettings.desktopLocked),
       autoStart: Boolean(parsed.autoStart ?? defaultSettings.autoStart),
@@ -317,29 +306,6 @@ async function applyWindowBehavior(mode: PinMode, locked: boolean) {
   }
 }
 
-async function startWindowDrag() {
-  try {
-    await getCurrentWindow().startDragging();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function applyWidgetWindowSize(size: WidgetSize) {
-  try {
-    const dimensions: Record<WidgetSize, { width: number; height: number }> = {
-      compact: { width: 900, height: 660 },
-      standard: { width: 1120, height: 760 },
-      wide: { width: 1360, height: 820 },
-    };
-    const next = dimensions[size];
-    await getCurrentWindow().setSize(new LogicalSize(next.width, next.height));
-  } catch {
-    return;
-  }
-}
-
 function App() {
   const [initialSettings] = useState<AppSettings>(loadSettings);
   const [widgetMode, setWidgetMode] = useState<WidgetMode>(initialSettings.widgetMode);
@@ -352,7 +318,6 @@ function App() {
   const [isGlanceOpen, setIsGlanceOpen] = useState(initialSettings.isGlanceOpen);
   const [opacity, setOpacity] = useState(initialSettings.opacity);
   const [pinMode, setPinMode] = useState<PinMode>(initialSettings.pinMode);
-  const [widgetSize, setWidgetSize] = useState<WidgetSize>(initialSettings.widgetSize);
   const [themeMode, setThemeMode] = useState<ThemeMode>(initialSettings.themeMode);
   const [effectiveTheme, setEffectiveTheme] = useState<EffectiveTheme>(
     initialSettings.themeMode === "system" ? getSystemTheme() : initialSettings.themeMode,
@@ -403,22 +368,17 @@ function App() {
         isGlanceOpen,
         opacity,
         pinMode,
-        widgetSize,
         themeMode,
         desktopLocked,
         autoStart,
         mousePassthrough,
       }),
     );
-  }, [widgetMode, isGlanceOpen, opacity, pinMode, widgetSize, themeMode, desktopLocked, autoStart, mousePassthrough]);
+  }, [widgetMode, isGlanceOpen, opacity, pinMode, themeMode, desktopLocked, autoStart, mousePassthrough]);
 
   useEffect(() => {
     void applyWindowBehavior(pinMode, desktopLocked);
   }, [pinMode, desktopLocked]);
-
-  useEffect(() => {
-    void applyWidgetWindowSize(widgetSize);
-  }, [widgetSize]);
 
   useEffect(() => {
     return () => {
@@ -650,7 +610,6 @@ function App() {
     setIsGlanceOpen(defaultSettings.isGlanceOpen);
     setOpacity(defaultSettings.opacity);
     setPinMode(defaultSettings.pinMode);
-    setWidgetSize(defaultSettings.widgetSize);
     setThemeMode(defaultSettings.themeMode);
     setDesktopLocked(defaultSettings.desktopLocked);
     setAutoStart(defaultSettings.autoStart);
@@ -757,7 +716,7 @@ function App() {
 
   return (
     <main
-      className={`desktop-stage widget-size-${widgetSize} theme-${effectiveTheme}`}
+      className={`desktop-stage theme-${effectiveTheme}`}
       style={{ "--panel-opacity": opacity / 100 } as React.CSSProperties}
     >
       <section
@@ -785,25 +744,7 @@ function App() {
               </p>
             </div>
             <div className="panel-toolbar panel-toolbar--tight">
-              <button
-                className={`icon-button drag-button ${desktopLocked ? "is-locked" : ""}`}
-                type="button"
-                aria-label={desktopLocked ? "窗口已锁定，去设置关闭后可拖动" : "拖动窗口"}
-                title={desktopLocked ? "窗口已锁定，可在设置里关闭后拖动" : "拖动窗口"}
-                onMouseDown={(event) => {
-                  if (event.button !== 0) return;
-                  event.preventDefault();
-                  if (desktopLocked) {
-                    showLockedWindowHint();
-                    return;
-                  }
-                  void startWindowDrag().then((started) => {
-                    if (!started) showNotice("窗口拖动没有启动，请确认当前运行的是 Tauri 桌面版。");
-                  });
-                }}
-              >
-                {desktopLocked ? <Lock size={17} aria-hidden="true" /> : <GripHorizontal size={18} aria-hidden="true" />}
-              </button>
+
               <button
                 className={`icon-button icon-button--glance ${isGlanceOpen ? "is-active" : ""}`}
                 type="button"
@@ -853,9 +794,6 @@ function App() {
               </div>
               <button className="icon-button" type="button" aria-label="新建任务" onClick={() => openCreate()}>
                 <Plus size={18} aria-hidden="true" />
-              </button>
-              <button className="icon-button" type="button" aria-label="日历连接状态" onClick={openAccountSettings}>
-                <Link2 size={18} aria-hidden="true" />
               </button>
               <button className="icon-button" type="button" aria-label="打开设置" onClick={() => setShowSettings(true)}>
                 <Settings size={18} aria-hidden="true" />
@@ -1120,11 +1058,13 @@ function App() {
       )}
 
       {showSettings && (
-        <div className="editor-backdrop" role="presentation">
+        <div className="editor-backdrop editor-backdrop--settings" role="presentation">
           <section className="settings-window" aria-label="Dayboard 设置窗口">
             <header className="window-bar">
-              <span className="traffic-lights" aria-hidden="true"><i /><i /><i /></span>
-              <span className="window-title">Dayboard · {settingsTab === "accounts" ? "账号连接" : "贴片外观"}</span>
+              <div className="settings-window-drag-region" data-tauri-drag-region title="拖动窗口">
+                <span className="traffic-lights" aria-hidden="true" data-tauri-drag-region><i /><i /><i /></span>
+                <span className="window-title" data-tauri-drag-region>Dayboard · {settingsTab === "accounts" ? "账号连接" : "贴片外观"}</span>
+              </div>
               <button className="window-close" type="button" aria-label="关闭设置" onClick={() => setShowSettings(false)}>
                 <X size={16} aria-hidden="true" />
               </button>
@@ -1288,12 +1228,12 @@ function App() {
                   <header className="content-head">
                     <div>
                       <h2>贴片外观</h2>
-                      <p>设置桌面贴片默认视图、尺寸、透明度和桌面行为。默认状态应该是一整块月视图，任务抽屉只在点击日历 icon 后展开。</p>
+                      <p>设置桌面贴片默认视图、透明度和桌面行为。窗口尺寸直接通过边缘自由调整，任务抽屉只在点击日历 icon 后展开。</p>
                     </div>
                     <span className="status-chip"><i />MONTH FIRST</span>
                   </header>
 
-                  <div className="card-grid card-grid--two">
+                  <div className="card-grid">
                     <section className="setting-card">
                       <h3>默认视图</h3>
                       <p>贴到桌面时默认打开月视图；周和双周是切换态，不是常驻三栏。</p>
@@ -1312,33 +1252,6 @@ function App() {
                               onClick={() => {
                                 setWidgetMode(mode);
                                 showNotice(`默认视图已设为${label}。`);
-                              }}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </section>
-
-                    <section className="setting-card">
-                      <h3>贴片尺寸</h3>
-                      <p>先给开发三个固定档位，避免自由缩放过早增加复杂度。</p>
-                      <div className="settings-row">
-                        <div className="row-copy"><strong>尺寸档位</strong><span>标准尺寸用于首版参考。</span></div>
-                        <div className="segmented" aria-label="贴片尺寸">
-                          {([
-                            ["compact", "紧凑"],
-                            ["standard", "标准"],
-                            ["wide", "宽"],
-                          ] as const).map(([size, label]) => (
-                            <button
-                              key={size}
-                              className={widgetSize === size ? "is-active" : ""}
-                              type="button"
-                              onClick={() => {
-                                setWidgetSize(size);
-                                showNotice(`贴片尺寸已切换为${label}。`);
                               }}
                             >
                               {label}

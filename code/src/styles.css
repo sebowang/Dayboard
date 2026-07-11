@@ -133,17 +133,6 @@ button {
   border-color: rgba(31, 52, 70, 0.1);
 }
 
-.widget-size-compact .widget-shell {
-  width: 100vw;
-}
-
-.widget-size-standard .widget-shell {
-  width: 100vw;
-}
-
-.widget-size-wide .widget-shell {
-  width: 100vw;
-}
 
 .widget-shell {
   display: grid;
@@ -278,19 +267,6 @@ button {
   border-color: rgba(255, 255, 255, 0.05);
 }
 
-.drag-button.is-locked {
-  cursor: help;
-  color: color-mix(in oklab, var(--muted-strong) 88%, transparent);
-  background: rgba(255, 255, 255, 0.035);
-  border-color: rgba(255, 255, 255, 0.075);
-}
-
-.drag-button.is-locked:hover,
-.drag-button.is-locked:focus-visible {
-  color: var(--fg);
-  background: rgba(117, 213, 232, 0.1);
-  border-color: rgba(117, 213, 232, 0.2);
-}
 
 .view-switch,
 .segmented,
@@ -858,6 +834,11 @@ button.status-pill:focus-visible {
   background: rgba(0, 0, 0, 0.5);
 }
 
+.editor-backdrop--settings {
+  padding: 0;
+  background: color-mix(in oklab, var(--surface-strong) 94%, black 6%);
+}
+
 .editor-sheet,
 .settings-window {
   display: grid;
@@ -876,8 +857,15 @@ button.status-pill:focus-visible {
 }
 
 .settings-window {
-  width: min(1080px, calc(100vw - 48px));
+  grid-template-rows: auto minmax(0, 1fr);
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  overflow: hidden;
   padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .editor-head {
@@ -944,12 +932,29 @@ button.status-pill:focus-visible {
 
 .window-bar {
   display: flex;
+  position: relative;
+  z-index: 2;
   height: 52px;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   padding: 0 18px;
   background: rgba(255, 255, 255, 0.035);
   border-bottom: 1px solid var(--border);
+}
+
+.settings-window-drag-region {
+  display: flex;
+  flex: 1;
+  align-self: stretch;
+  align-items: center;
+  justify-content: space-between;
+  cursor: grab;
+  user-select: none;
+}
+
+.settings-window-drag-region:active {
+  cursor: grabbing;
 }
 
 .traffic-lights {
@@ -974,6 +979,7 @@ button.status-pill:focus-visible {
   display: inline-grid;
   width: 30px;
   height: 30px;
+  flex-shrink: 0;
   place-items: center;
   color: var(--muted);
   background: rgba(255, 255, 255, 0.045);
@@ -984,7 +990,8 @@ button.status-pill:focus-visible {
 .settings-layout {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
-  min-height: min(620px, calc(100vh - 88px));
+  min-height: 0;
+  overflow: auto;
 }
 
 .settings-sidebar {

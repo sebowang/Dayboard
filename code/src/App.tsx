@@ -15,7 +15,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { DragEvent, FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { type AppSettings, type CalendarName, type DayboardItem, type DraftItem, type EffectiveTheme, type ItemKind, type PinMode, type TaskState, type ThemeMode, type WidgetMode, defaultSettings, loadItems, loadSettings, resetToSeedItems, saveItems, saveSettings, seedItems, STORAGE_KEYS } from "./storage";
 
-import { getAuthUrl, handleAuthCallback, isGoogleConnected, disconnectGoogle, fetchCalendarEvents } from "./sync/google";
+import { getAuthUrl, handleAuthCallback, isGoogleConnected, disconnectGoogle, fetchCalendarEvents, readOauthLog } from "./sync/google";
 type EditorState =
   | { mode: "create"; draft: DraftItem }
   | { mode: "edit"; id: string; draft: DraftItem }
@@ -175,6 +175,7 @@ function App() {
   const [syncing, setSyncing] = useState(false);
   const [googleConnected, setGoogleConnected] = useState(() => isGoogleConnected());
   const [googleConnecting, setGoogleConnecting] = useState(false);
+  const [lastOauthLog, setLastOauthLog] = useState("");
   const [toast, setToast] = useState("");
   const toastTimer = useRef<number | null>(null);
   const [retryMessage, setRetryMessage] = useState("Outlook 任务列表 16 分钟前同步失败，日历仍可正常显示。");
@@ -246,40 +247,53 @@ function App() {
   }, [themeMode]);
 
   // Handle OAuth callback on page load.
-  // Guarded against React Strict Mode double-mount in dev:
-  // Google auth codes are single-use, so we skip if already connected.
   const oauthHandled = useRef(false);
   useEffect(() => {
     const url = window.location.href;
+    console.log("[Dayboard::App] mount, url:", url.substring(0, 100));
+
     if (url.includes("oauth/google/callback") && !oauthHandled.current) {
       oauthHandled.current = true;
+      console.log("[Dayboard::App] OAuth callback detected");
+
       const parsed = new URL(url);
       const error = parsed.searchParams.get("error");
       const code = parsed.searchParams.get("code");
 
-      // Always clean the URL first so a refresh doesn't re-trigger.
+      // Clean the URL first so a refresh doesn't re-trigger.
       window.history.replaceState({}, "", "/");
 
-      if (error) {
-        showNotice("Google 授权失败，请重试。");
-        return;
-      }
-      if (!code) return;
+      console.log("[Dayboard::App] error param:", error, "code present:", !!code);
 
-      // If already connected (e.g. from a previous Strict Mode run), just update state.
-      if (isGoogleConnected()) {
-        setGoogleConnected(true);
-        showNotice("Google 日历已连接。");
+      if (error) {
+        const msg = "Google returned error: " + error;
+        console.error("[Dayboard::App]", msg);
+        setLastOauthLog(msg);
+        showNotice("Google " + msg);
         return;
       }
+      if (!code) {
+        console.error("[Dayboard::App] No code in callback URL");
+        setLastOauthLog("No authorization code in callback URL");
+        return;
+      }
+
+      // Even if already connected (Strict Mode double-run), re-check
+      const alreadyConnected = isGoogleConnected();
+      console.log("[Dayboard::App] alreadyConnected:", alreadyConnected);
 
       handleAuthCallback(url)
         .then(() => {
+          console.log("[Dayboard::App] handleAuthCallback SUCCESS");
           setGoogleConnected(true);
+          setLastOauthLog("Success at " + new Date().toLocaleTimeString());
           showNotice("Google 日历已连接。");
         })
-        .catch((err: Error) => {
-          showNotice("授权失败: " + err.message);
+        .catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("[Dayboard::App] handleAuthCallback FAILED:", msg);
+          setLastOauthLog("FAILED: " + msg);
+          showNotice("授权失败: " + msg);
         });
     }
   }, []);
@@ -1125,6 +1139,16 @@ function App() {
                     </article>
                   </div>
 
+                  {lastOauthLog ? (
+                    <section className="setting-card">
+                      <h3>OAuth 诊断</h3>
+                      <p style={{fontFamily:"monospace",fontSize:"12px",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
+                        {lastOauthLog}
+                      </p>
+                      <p>token set in localStorage: {String(isGoogleConnected())}</p>
+                      <pre style={{fontSize:"10px",maxHeight:"200px",overflow:"auto",background:"rgba(255,255,255,0.05)",padding:"8px",borderRadius:"4px"}}>{readOauthLog() || "(no log yet)"}</pre>
+                    </section>
+                  ) : null}
                   <section className="setting-card">
                     <h3>同步范围</h3>
                     <p>这些开关决定贴片可读取哪些内容。</p>

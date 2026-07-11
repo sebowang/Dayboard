@@ -1,6 +1,6 @@
 // Google Calendar sync module for Dayboard
 // OAuth 2.0 with PKCE (S256). code_verifier is encoded in the OAuth state
-// parameter so it survives the Tauri-webview → browser → webview roundtrip.
+// parameter so it survives the roundtrip.
 
 // ---------------------------------------------------------------------------
 // Types
@@ -24,11 +24,11 @@ export interface CalendarEntry {
 interface TokenSet {
   access_token: string;
   refresh_token?: string;
-  expires_at: number; // epoch ms
+  expires_at: number;
 }
 
 // ---------------------------------------------------------------------------
-// OAuth configuration
+// OAuth configuration (from VITE_ env vars — see .env)
 // ---------------------------------------------------------------------------
 
 export const GOOGLE_AUTH_CONFIG = {
@@ -51,6 +51,31 @@ export class GoogleSyncError extends Error {
     this.name = "GoogleSyncError";
     this.code = code;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Logger — writes to console + a localStorage ring buffer for UI diag
+// ---------------------------------------------------------------------------
+
+const LOG_KEY = "dayboard.google.v1.last_log";
+
+function oauthLog(step: string, detail?: unknown): void {
+  const ts = new Date().toISOString().slice(11, 19);
+  const entry = `[${ts}] ${step}`;
+  console.log(entry, detail ?? "");
+  try {
+    // Append so we keep history
+    const prev = localStorage.getItem(LOG_KEY) ?? "";
+    localStorage.setItem(LOG_KEY, prev + entry + "\n");
+  } catch { /* noop */ }
+}
+
+export function readOauthLog(): string {
+  try { return localStorage.getItem(LOG_KEY) ?? ""; } catch { return ""; }
+}
+
+export function clearOauthLog(): void {
+  try { localStorage.removeItem(LOG_KEY); } catch { /* noop */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -111,16 +136,10 @@ function clearTokenSet(): void {
 // Public API
 // ---------------------------------------------------------------------------
 
-/**
- * Build the Google OAuth URL. Encodes code_verifier into the state parameter
- * so it survives the roundtrip through the system browser.
- */
 export async function getAuthUrl(): Promise<string> {
+  oauthLog("getAuthUrl: generating code_verifier");
   const codeVerifier = generateCodeVerifier();
   const codeChallenge = await sha256Base64Url(codeVerifier);
-
-  // Pack code_verifier into the state param so the callback can recover it
-  // without relying on shared localStorage between Tauri webview and system browser.
   const state = "v1:" + codeVerifier;
 
   const params = new URLSearchParams({
@@ -135,57 +154,66 @@ export async function getAuthUrl(): Promise<string> {
     prompt: "consent",
   });
 
+  oauthLog("getAuthUrl: auth URL built, redirectUri=" + GOOGLE_AUTH_CONFIG.redirectUri);
   return `${GOOGLE_AUTH_CONFIG.authEndpoint}?${params.toString()}`;
 }
 
-/**
- * Handle the OAuth redirect callback. Extracts code_verifier from the state
- * parameter (not from localStorage) so the system browser can complete the
- * token exchange independently.
- */
 export async function handleAuthCallback(url: string): Promise<void> {
+  oauthLog("handleAuthCallback START, url=" + url.substring(0, 150));
+
   const parsed = new URL(url);
   const error = parsed.searchParams.get("error");
+  const code = parsed.searchParams.get("code");
+  const state = parsed.searchParams.get("state");
+
+  oauthLog("handleAuthCallback: error=" + error + ", hasCode=" + !!code + ", hasState=" + !!state);
 
   if (error) {
+    oauthLog("handleAuthCallback: Google returned error: " + error);
     throw new GoogleSyncError("AUTH_ERROR", `OAuth error: ${error}`);
   }
-
-  const code = parsed.searchParams.get("code");
   if (!code) {
+    oauthLog("handleAuthCallback: NO_CODE");
     throw new GoogleSyncError("NO_CODE", "No authorization code in callback URL");
   }
-
-  const state = parsed.searchParams.get("state");
   if (!state || !state.startsWith("v1:")) {
-    throw new GoogleSyncError("NO_VERIFIER", "Missing or invalid state parameter");
+    oauthLog("handleAuthCallback: invalid state param: " + (state ?? "null"));
+    throw new GoogleSyncError("NO_VERIFIER", "Missing or invalid state parameter: " + (state ?? "null"));
   }
-  const codeVerifier = state.slice(3);
 
+  const codeVerifier = state.slice(3);
+  oauthLog("handleAuthCallback: code_verifier extracted, len=" + codeVerifier.length);
+
+  oauthLog("handleAuthCallback: exchanging code for token...");
   const response = await fetch(GOOGLE_AUTH_CONFIG.tokenEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       client_id: GOOGLE_AUTH_CONFIG.clientId,
+      client_secret: GOOGLE_AUTH_CONFIG.clientSecret,
       redirect_uri: GOOGLE_AUTH_CONFIG.redirectUri,
       grant_type: "authorization_code",
-      client_secret: GOOGLE_AUTH_CONFIG.clientSecret,
       code,
       code_verifier: codeVerifier,
     }),
   });
 
+  oauthLog("handleAuthCallback: token exchange status=" + response.status);
   if (!response.ok) {
     const text = await response.text();
+    oauthLog("handleAuthCallback: TOKEN EXCHANGE FAILED body=" + text);
     throw new GoogleSyncError("TOKEN_EXCHANGE_FAILED", text);
   }
 
   const data = await response.json();
+  oauthLog("handleAuthCallback: TOKEN OK, has_access_token=" + !!data.access_token + ", has_refresh=" + !!data.refresh_token);
+
   saveTokenSet({
     access_token: data.access_token,
     refresh_token: data.refresh_token,
     expires_at: Date.now() + (data.expires_in ?? 3600) * 1000,
   });
+  oauthLog("handleAuthCallback: token_set SAVED to localStorage");
 }
 
 export async function getValidToken(): Promise<string | null> {
@@ -201,8 +229,9 @@ export async function getValidToken(): Promise<string | null> {
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       client_id: GOOGLE_AUTH_CONFIG.clientId,
-      grant_type: "refresh_token",
       client_secret: GOOGLE_AUTH_CONFIG.clientSecret,
+      grant_type: "refresh_token",
+      refresh_token: tokens.refresh_token,
     }),
   });
   if (!response.ok) { clearTokenSet(); throw new GoogleSyncError("REFRESH_FAILED", await response.text()); }
@@ -246,4 +275,4 @@ export async function listCalendars(): Promise<CalendarEntry[]> {
 }
 
 export function isGoogleConnected(): boolean { return readTokenSet() !== null; }
-export function disconnectGoogle(): void { clearTokenSet(); }
+export function disconnectGoogle(): void { clearTokenSet(); oauthLog("disconnectGoogle: tokens cleared"); }

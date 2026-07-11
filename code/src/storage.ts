@@ -20,6 +20,12 @@ export type DayboardItem = {
 
 export type DraftItem = Omit<DayboardItem, "id">;
 
+export type SyncOptions = {
+  calendar: boolean;
+  tasks: boolean;
+  mailEvents: boolean;
+};
+
 export type AppSettings = {
   widgetMode: WidgetMode;
   isGlanceOpen: boolean;
@@ -29,6 +35,7 @@ export type AppSettings = {
   desktopLocked: boolean;
   autoStart: boolean;
   mousePassthrough: boolean;
+  syncOptions: SyncOptions;
 };
 
 export const STORAGE_KEYS = {
@@ -45,6 +52,7 @@ export const defaultSettings: AppSettings = {
   desktopLocked: false,
   autoStart: false,
   mousePassthrough: false,
+  syncOptions: { calendar: true, tasks: true, mailEvents: false },
 };
 
 export const seedItems: DayboardItem[] = [
@@ -158,6 +166,13 @@ export const loadSettings = (): AppSettings => {
       desktopLocked: Boolean(parsed.desktopLocked ?? defaultSettings.desktopLocked),
       autoStart: Boolean(parsed.autoStart ?? defaultSettings.autoStart),
       mousePassthrough: Boolean(parsed.mousePassthrough ?? defaultSettings.mousePassthrough),
+      syncOptions: parsed.syncOptions && typeof parsed.syncOptions === "object"
+        ? {
+            calendar: Boolean((parsed.syncOptions as Record<string,unknown>).calendar ?? true),
+            tasks: Boolean((parsed.syncOptions as Record<string,unknown>).tasks ?? true),
+            mailEvents: Boolean((parsed.syncOptions as Record<string,unknown>).mailEvents ?? false),
+          }
+        : defaultSettings.syncOptions,
     } as AppSettings;
   } catch {
     return defaultSettings;

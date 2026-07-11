@@ -176,14 +176,11 @@ function App() {
   const [googleConnected, setGoogleConnected] = useState(() => isGoogleConnected());
   const [googleConnecting, setGoogleConnecting] = useState(false);
   const [lastOauthLog, setLastOauthLog] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState("");
   const toastTimer = useRef<number | null>(null);
   const [retryMessage, setRetryMessage] = useState("Outlook 任务列表 16 分钟前同步失败，日历仍可正常显示。");
-  const [syncOptions, setSyncOptions] = useState({
-    calendar: true,
-    tasks: true,
-    mailEvents: false,
-  });
+  const [syncOptions, setSyncOptions] = useState(initialSettings.syncOptions);
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [dropTargetDate, setDropTargetDate] = useState<string | null>(null);
   const [dragPreview, setDragPreview] = useState<DragPreviewState>(null);
@@ -196,13 +193,17 @@ function App() {
   const monthTitle = useMemo(() => formatMonthTitle(currentMonth), [currentMonth]);
 
   const itemsByDate = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const source = q
+      ? boardItems.filter((item) => item.title.toLowerCase().includes(q))
+      : boardItems;
     const grouped = new Map<string, DayboardItem[]>();
-    boardItems.forEach((item) => {
+    source.forEach((item) => {
       grouped.set(item.date, [...(grouped.get(item.date) ?? []), item]);
     });
     grouped.forEach((items) => items.sort((a, b) => a.start.localeCompare(b.start)));
     return grouped;
-  }, [boardItems]);
+  }, [boardItems, searchQuery]);
 
   const selectedItems = itemsByDate.get(selectedDate) ?? [];
 
@@ -220,6 +221,7 @@ function App() {
       desktopLocked,
       autoStart,
       mousePassthrough,
+      syncOptions,
     });
   }, [widgetMode, isGlanceOpen, opacity, pinMode, themeMode, desktopLocked, autoStart, mousePassthrough]);
 
@@ -327,9 +329,15 @@ function App() {
     setEditor({ mode: "edit", id, draft });
   };
 
+  const handleCloseEditor = () => {
+    if (!editor) { setEditor(null); return; }
+    if (editor.draft.title.trim() && !window.confirm("关闭将丢弃未保存的内容，确定吗？")) return;
+    setEditor(null);
+  };
+
   const saveDraft = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!editor || !editor.draft.title.trim()) return;
+    if (!editor || !editor.draft.title.trim()) { if (editor && !editor.draft.title.trim()) showNotice("\u6807\u9898\u4e0d\u80fd\u4e3a\u7a7a\u3002"); return; }
 
     const draft = { ...editor.draft, title: editor.draft.title.trim() };
 
@@ -550,9 +558,13 @@ function App() {
     setDesktopLocked(defaultSettings.desktopLocked);
     setAutoStart(defaultSettings.autoStart);
     setMousePassthrough(defaultSettings.mousePassthrough);
+    setSyncOptions(defaultSettings.syncOptions);
+    setGoogleConnected(false);
+    setLastOauthLog("");
+    disconnectGoogle();
     setSelectedDate(todayKey);
     setCurrentMonth(parseDateKey(todayKey));
-    showNotice("已恢复示例数据和默认贴片设置");
+    showNotice("已恢复示例数据，已断开 Google 连接");
   };
 
   const openAccountSettings = () => {
@@ -904,7 +916,7 @@ function App() {
                 <span className="section-title">{editor.mode === "create" ? "新增" : "编辑"}</span>
                 <h2>{editor.mode === "create" ? "新建任务" : "修改安排"}</h2>
               </div>
-              <button className="icon-button" type="button" aria-label="关闭编辑" onClick={() => setEditor(null)}>
+              <button className="icon-button" type="button" aria-label="关闭编辑" onClick={handleCloseEditor}>
                 <X size={18} aria-hidden="true" />
               </button>
             </div>
@@ -1000,7 +1012,7 @@ function App() {
                   删除
                 </button>
               )}
-              <button className="secondary-action" type="button" onClick={() => setEditor(null)}>
+              <button className="secondary-action" type="button" onClick={handleCloseEditor}>
                 取消
               </button>
               <button className="primary-action" type="submit">

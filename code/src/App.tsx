@@ -245,30 +245,42 @@ function App() {
     return () => media?.removeEventListener("change", syncTheme);
   }, [themeMode]);
 
-  // Handle OAuth callback on page load
+  // Handle OAuth callback on page load.
+  // Guarded against React Strict Mode double-mount in dev:
+  // Google auth codes are single-use, so we skip if already connected.
+  const oauthHandled = useRef(false);
   useEffect(() => {
     const url = window.location.href;
-    if (url.includes("oauth/google/callback")) {
-      const code = new URL(url).searchParams.get("code");
-      const error = new URL(url).searchParams.get("error");
+    if (url.includes("oauth/google/callback") && !oauthHandled.current) {
+      oauthHandled.current = true;
+      const parsed = new URL(url);
+      const error = parsed.searchParams.get("error");
+      const code = parsed.searchParams.get("code");
+
+      // Always clean the URL first so a refresh doesn't re-trigger.
+      window.history.replaceState({}, "", "/");
+
       if (error) {
         showNotice("Google 授权失败，请重试。");
-        window.history.replaceState({}, "", "/");
         return;
       }
-      if (code) {
-        handleAuthCallback(url)
-          .then(() => {
-            setGoogleConnected(true);
-            showNotice("Google 日历已连接。");
-          })
-          .catch((err: Error) => {
-            showNotice("授权失败: " + err.message);
-          })
-          .finally(() => {
-            window.history.replaceState({}, "", "/");
-          });
+      if (!code) return;
+
+      // If already connected (e.g. from a previous Strict Mode run), just update state.
+      if (isGoogleConnected()) {
+        setGoogleConnected(true);
+        showNotice("Google 日历已连接。");
+        return;
       }
+
+      handleAuthCallback(url)
+        .then(() => {
+          setGoogleConnected(true);
+          showNotice("Google 日历已连接。");
+        })
+        .catch((err: Error) => {
+          showNotice("授权失败: " + err.message);
+        });
     }
   }, []);
 

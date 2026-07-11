@@ -1,4 +1,4 @@
-﻿import {
+import {
   CalendarDays,
   Check,
   ChevronLeft,
@@ -15,6 +15,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { DragEvent, FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { type AppSettings, type CalendarName, type DayboardItem, type DraftItem, type EffectiveTheme, type ItemKind, type PinMode, type TaskState, type ThemeMode, type WidgetMode, defaultSettings, loadItems, loadSettings, resetToSeedItems, saveItems, saveSettings, seedItems, STORAGE_KEYS } from "./storage";
 
+import { getAuthUrl, handleAuthCallback, isGoogleConnected, disconnectGoogle, fetchCalendarEvents } from "./sync/google";
 type EditorState =
   | { mode: "create"; draft: DraftItem }
   | { mode: "edit"; id: string; draft: DraftItem }
@@ -172,6 +173,8 @@ function App() {
   const [autoStart, setAutoStart] = useState(initialSettings.autoStart);
   const [mousePassthrough, setMousePassthrough] = useState(initialSettings.mousePassthrough);
   const [syncing, setSyncing] = useState(false);
+  const [googleConnected, setGoogleConnected] = useState(() => isGoogleConnected());
+  const [googleConnecting, setGoogleConnecting] = useState(false);
   const [toast, setToast] = useState("");
   const toastTimer = useRef<number | null>(null);
   const [retryMessage, setRetryMessage] = useState("Outlook 任务列表 16 分钟前同步失败，日历仍可正常显示。");
@@ -241,6 +244,33 @@ function App() {
     media?.addEventListener("change", syncTheme);
     return () => media?.removeEventListener("change", syncTheme);
   }, [themeMode]);
+
+  // Handle OAuth callback on page load
+  useEffect(() => {
+    const url = window.location.href;
+    if (url.includes("oauth/google/callback")) {
+      const code = new URL(url).searchParams.get("code");
+      const error = new URL(url).searchParams.get("error");
+      if (error) {
+        showNotice("Google 授权失败，请重试。");
+        window.history.replaceState({}, "", "/");
+        return;
+      }
+      if (code) {
+        handleAuthCallback(url)
+          .then(() => {
+            setGoogleConnected(true);
+            showNotice("Google 日历已连接。");
+          })
+          .catch((err: Error) => {
+            showNotice("授权失败: " + err.message);
+          })
+          .finally(() => {
+            window.history.replaceState({}, "", "/");
+          });
+      }
+    }
+  }, []);
 
   const showNotice = (message: string) => {
     setToast(message);
@@ -465,7 +495,25 @@ function App() {
   const openAccountSettings = () => {
     setSettingsTab("accounts");
     setShowSettings(true);
-    showNotice("账号能力目前是 MVP 入口，真实 OAuth 会放到后续阶段。");
+  };
+
+  const connectGoogle = async () => {
+    setGoogleConnecting(true);
+    try {
+      const authUrl = await getAuthUrl();
+      window.open(authUrl, "_blank");
+      showNotice("请在浏览器中完成 Google 授权。");
+    } catch (err) {
+      showNotice("无法启动 Google 授权: " + (err as Error).message);
+    } finally {
+      setGoogleConnecting(false);
+    }
+  };
+
+  const disconnectGoogleAccount = () => {
+    disconnectGoogle();
+    setGoogleConnected(false);
+    showNotice("Google 日历已断开。");
   };
 
   const showLockedWindowHint = () => {
@@ -956,22 +1004,29 @@ function App() {
                   <header className="content-head">
                     <div>
                       <h2>账号连接</h2>
-                      <p>把 Gmail、Outlook 和订阅日历同步到 Dayboard。连接状态保持低干扰，详细编辑交给主应用流程。</p>
+                      <p>连接你的日历账号，将日程同步到桌面贴片。</p>
                     </div>
                     <button
                       className="action-button action-button--primary"
                       type="button"
                       disabled={syncing}
-                      onClick={() => {
+                      onClick={async () => {
+                        if (!googleConnected) { showNotice("请先连接 Google 日历再同步。"); return; }
                         setSyncing(true);
-                        showNotice("正在模拟手动同步；真实账号同步会在后续 OAuth 阶段接入。");
-                        window.setTimeout(() => {
+                        try {
+                          const events = await fetchCalendarEvents(
+                            new Date(Date.now() - 7 * 864e5).toISOString(),
+                            new Date(Date.now() + 30 * 864e5).toISOString()
+                          );
+                          showNotice(`已同步 ${events.length} 个日历事件。`);
+                        } catch (err) {
+                          showNotice("同步失败: " + (err as Error).message);
+                        } finally {
                           setSyncing(false);
-                          showNotice("同步请求已完成模拟。");
-                        }, 900);
+                        }
                       }}
                     >
-                      {syncing ? "Syncing..." : "手动同步"}
+                      {syncing ? "Syncing..." : "同步"}
                     </button>
                   </header>
 
@@ -979,36 +1034,69 @@ function App() {
                     <article className="account-card">
                       <div className="account-icon">G</div>
                       <div className="account-main">
-                        <h3>Gmail</h3>
-                        <p>已连接个人 Google 账号，日历和邮件日程进入桌面贴片。</p>
+                        <h3>Google 日历</h3>
+                        <p>
+                          {googleConnected
+                            ? "已连接你的 Google 账号，日历事件将同步到桌面贴片。"
+                            : "连接 Google 日历后，日程自动出现在贴片上。"}
+                        </p>
                         <div className="account-meta">
                           <span className="meta-pill">Calendar</span>
-                          <span className="meta-pill">Mail events</span>
-                          <span className="meta-pill">Last sync 2m ago</span>
+                          {googleConnected && <span className="meta-pill">已授权</span>}
                         </div>
                       </div>
-                      <span className="status-chip"><i />CONNECTED</span>
+                      {googleConnected ? (
+                        <span className="status-chip"><i />CONNECTED</span>
+                      ) : (
+                        <button
+                          className="action-button"
+                          type="button"
+                          disabled={googleConnecting}
+                          onClick={connectGoogle}
+                        >
+                          {googleConnecting ? "跳转中..." : "连接"}
+                        </button>
+                      )}
                     </article>
+
+                    {googleConnected && (
+                      <article className="account-card">
+                        <div className="account-main" style={{ width: "100%" }}>
+                          <button
+                            className="danger-action standalone"
+                            type="button"
+                            onClick={disconnectGoogleAccount}
+                          >
+                            断开 Google 日历
+                          </button>
+                        </div>
+                      </article>
+                    )}
 
                     <article className="account-card">
                       <div className="account-icon">O</div>
                       <div className="account-main">
                         <h3>Outlook</h3>
-                        <p>工作账号已连接，任务列表正在同步。失败时只给轻量提示，不放大成主警告。</p>
+                        <p>Outlook 日历同步将在后续版本中接入 Microsoft Graph API。</p>
                         <div className="account-meta">
                           <span className="meta-pill">Calendar</span>
-                          <span className="meta-pill">Tasks</span>
-                          <span className="meta-pill">Syncing</span>
+                          <span className="meta-pill">即将推出</span>
                         </div>
                       </div>
-                      <span className="status-chip status-chip--warning"><i />SYNCING</span>
+                      <button
+                        className="action-button"
+                        type="button"
+                        onClick={() => showNotice("Outlook 同步将在后续 OAuth 阶段接入。")}
+                      >
+                        连接
+                      </button>
                     </article>
 
                     <article className="account-card">
                       <div className="account-icon">I</div>
                       <div className="account-main">
                         <h3>ICS / Apple Calendar</h3>
-                        <p>作为后续订阅入口保留，不在当前首版里做完整连接流程。</p>
+                        <p>作为后续订阅入口保留，当前 MVP 暂不连接。</p>
                         <div className="account-meta">
                           <span className="meta-pill">Subscription</span>
                           <span className="meta-pill">Optional</span>
@@ -1017,7 +1105,7 @@ function App() {
                       <button
                         className="action-button"
                         type="button"
-                        onClick={() => showNotice("ICS / Apple Calendar 是后续订阅入口，当前 MVP 暂不连接真实账号。")}
+                        onClick={() => showNotice("ICS / Apple Calendar 是后续订阅入口。")}
                       >
                         连接
                       </button>
@@ -1026,11 +1114,11 @@ function App() {
 
                   <section className="setting-card">
                     <h3>同步范围</h3>
-                    <p>这些开关决定贴片可读取哪些内容；默认只同步日历和任务，不默认读取所有邮件。</p>
+                    <p>这些开关决定贴片可读取哪些内容。</p>
                     {([
                       ["calendar", "日历事件", "会议、全天事件、外部邀请。"],
                       ["tasks", "任务列表", "Outlook To Do、本地任务和轻量待办。"],
-                      ["mailEvents", "邮件识别日程", "从邮件中提取航班、会议和预约，默认需要用户开启。"],
+                      ["mailEvents", "邮件识别日程", "从邮件中提取航班、会议和预约。"],
                     ] as const).map(([key, title, desc]) => (
                       <div className="settings-row" key={key}>
                         <div className="row-copy"><strong>{title}</strong><span>{desc}</span></div>
@@ -1054,11 +1142,11 @@ function App() {
                       className="action-button"
                       type="button"
                       onClick={() => {
-                        setRetryMessage("正在重新同步 Outlook 任务列表。");
-                        showNotice("正在重试 Outlook 任务列表同步。");
+                        setRetryMessage("正在重新同步...");
+                        showNotice("正在重试同步。");
                         window.setTimeout(() => {
-                          setRetryMessage("Outlook 任务列表已重新进入同步队列。");
-                          showNotice("Outlook 任务列表已进入同步队列。");
+                          setRetryMessage("同步队列已更新。");
+                          showNotice("同步已进入队列。");
                         }, 800);
                       }}
                     >

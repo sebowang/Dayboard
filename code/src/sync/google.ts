@@ -31,9 +31,9 @@ interface TokenSet {
 // ---------------------------------------------------------------------------
 
 export const GOOGLE_AUTH_CONFIG = {
-  clientId: "YOUR_CLIENT_ID",
+  clientId: "168213630540-0rtq2h73jn4trb3938ard3bmq3o9g77q.apps.googleusercontent.com",
   redirectUri: "http://localhost:1420/oauth/google/callback",
-  scopes: ["https://www.googleapis.com/auth/calendar.readonly"],
+  scopes: ["https://www.googleapis.com/auth/calendar.events"],
   authEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
   tokenEndpoint: "https://oauth2.googleapis.com/token",
 } as const;
@@ -281,6 +281,16 @@ export async function fetchCalendarEvents(
 /**
  * List available calendars for the authenticated user.
  */
+
+/** Returns true if the user has a stored token set (connected or connectable). */
+export function isGoogleConnected(): boolean {
+  return readTokenSet() !== null;
+}
+
+/** Remove all stored Google tokens. */
+export function disconnectGoogle(): void {
+  clearTokenSet();
+}
 export async function listCalendars(): Promise<CalendarEntry[]> {
   const token = await getValidToken();
   if (!token) {

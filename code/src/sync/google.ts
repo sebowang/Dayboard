@@ -32,7 +32,8 @@ interface TokenSet {
 // ---------------------------------------------------------------------------
 
 export const GOOGLE_AUTH_CONFIG = {
-  clientId: "168213630540-0rtq2h73jn4trb3938ard3bmq3o9g77q.apps.googleusercontent.com",
+  clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || "",
+  clientSecret: import.meta.env.VITE_GOOGLE_CLIENT_SECRET || "",
   redirectUri: "http://127.0.0.1:1420/oauth/google/callback",
   scopes: ["https://www.googleapis.com/auth/calendar.events"],
   authEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -168,6 +169,7 @@ export async function handleAuthCallback(url: string): Promise<void> {
       client_id: GOOGLE_AUTH_CONFIG.clientId,
       redirect_uri: GOOGLE_AUTH_CONFIG.redirectUri,
       grant_type: "authorization_code",
+      client_secret: GOOGLE_AUTH_CONFIG.clientSecret,
       code,
       code_verifier: codeVerifier,
     }),
@@ -200,7 +202,7 @@ export async function getValidToken(): Promise<string | null> {
     body: new URLSearchParams({
       client_id: GOOGLE_AUTH_CONFIG.clientId,
       grant_type: "refresh_token",
-      refresh_token: tokens.refresh_token,
+      client_secret: GOOGLE_AUTH_CONFIG.clientSecret,
     }),
   });
   if (!response.ok) { clearTokenSet(); throw new GoogleSyncError("REFRESH_FAILED", await response.text()); }

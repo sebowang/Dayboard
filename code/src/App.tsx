@@ -1,4 +1,4 @@
-import {
+﻿import {
   CalendarDays,
   Check,
   ChevronLeft,
@@ -13,44 +13,12 @@ import {
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { DragEvent, FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { type AppSettings, type CalendarName, type DayboardItem, type DraftItem, type EffectiveTheme, type ItemKind, type PinMode, type TaskState, type ThemeMode, type WidgetMode, defaultSettings, loadItems, loadSettings, resetToSeedItems, saveItems, saveSettings, seedItems, STORAGE_KEYS } from "./storage";
 
-type WidgetMode = "month" | "week" | "fortnight";
-type ThemeMode = "dark" | "light" | "system";
-type EffectiveTheme = "dark" | "light";
-type TaskState = "open" | "done";
-type ItemKind = "event" | "task";
-type CalendarName = "Local" | "Gmail" | "Outlook";
-type PinMode = "normal" | "desktop" | "top";
-
-type DayboardItem = {
-  id: string;
-  title: string;
-  date: string;
-  start: string;
-  end: string;
-  kind: ItemKind;
-  state: TaskState;
-  calendar: CalendarName;
-  note: string;
-};
-
-type DraftItem = Omit<DayboardItem, "id">;
 type EditorState =
   | { mode: "create"; draft: DraftItem }
   | { mode: "edit"; id: string; draft: DraftItem }
   | null;
-
-type AppSettings = {
-  widgetMode: WidgetMode;
-  isGlanceOpen: boolean;
-  opacity: number;
-  pinMode: PinMode;
-  themeMode: ThemeMode;
-  desktopLocked: boolean;
-  autoStart: boolean;
-  mousePassthrough: boolean;
-};
-
 type DragPayload = {
   itemId: string;
 };
@@ -71,92 +39,8 @@ type DragPreviewState = {
   width: number;
 } | null;
 
-const STORAGE_KEYS = {
-  items: "dayboard.items.v1",
-  settings: "dayboard.settings.v5",
-};
-
-const seedItems: DayboardItem[] = [
-  {
-    id: "today-plan",
-    title: "校准今日排期",
-    date: "2026-07-04",
-    start: "09:30",
-    end: "10:00",
-    kind: "event",
-    state: "open",
-    calendar: "Outlook",
-    note: "确认桌面贴片 MVP 的优先顺序。",
-  },
-  {
-    id: "prototype-pass",
-    title: "按 OpenDesign 重做主贴片",
-    date: "2026-07-04",
-    start: "11:00",
-    end: "12:00",
-    kind: "task",
-    state: "open",
-    calendar: "Local",
-    note: "以 widget-main.html 为基础，而不是继续打磨旧界面。",
-  },
-  {
-    id: "drawer-test",
-    title: "验证当日任务抽屉",
-    date: "2026-07-04",
-    start: "15:30",
-    end: "16:30",
-    kind: "task",
-    state: "open",
-    calendar: "Local",
-    note: "点击日期后展开右侧抽屉。",
-  },
-  {
-    id: "weekly-review",
-    title: "周中产品复盘",
-    date: "2026-07-06",
-    start: "10:30",
-    end: "11:15",
-    kind: "event",
-    state: "open",
-    calendar: "Gmail",
-    note: "",
-  },
-  {
-    id: "sync-research",
-    title: "整理同步边界",
-    date: "2026-07-07",
-    start: "",
-    end: "",
-    kind: "task",
-    state: "open",
-    calendar: "Local",
-    note: "OAuth、重复事件、全天事件、时区。",
-  },
-  {
-    id: "archive-notes",
-    title: "归档旧设计反馈",
-    date: "2026-07-03",
-    start: "",
-    end: "",
-    kind: "task",
-    state: "done",
-    calendar: "Local",
-    note: "",
-  },
-];
 
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
-
-const defaultSettings: AppSettings = {
-  widgetMode: "month",
-  isGlanceOpen: false,
-  opacity: 88,
-  pinMode: "desktop",
-  themeMode: "dark",
-  desktopLocked: false,
-  autoStart: false,
-  mousePassthrough: false,
-};
 
 const toneClass: Record<CalendarName, string> = {
   Local: "source-local",
@@ -231,50 +115,12 @@ const emptyDraft = (date: string): DraftItem => ({
   note: "",
 });
 
-const normalizeMode = (value: unknown): WidgetMode => {
-  if (value === "week" || value === "fortnight" || value === "month") return value;
-  if (value === "biweek") return "fortnight";
-  return defaultSettings.widgetMode;
-};
 
-const normalizeTheme = (value: unknown): ThemeMode => {
-  if (value === "dark" || value === "light" || value === "system") return value;
-  return defaultSettings.themeMode;
-};
 
 const getSystemTheme = (): EffectiveTheme =>
   window.matchMedia?.("(prefers-color-scheme: light)").matches ? "light" : "dark";
 
-const loadItems = () => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.items);
-    if (!raw) return seedItems;
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as DayboardItem[]) : seedItems;
-  } catch {
-    return seedItems;
-  }
-};
 
-const loadSettings = () => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.settings) ?? localStorage.getItem("dayboard.settings.v2");
-    if (!raw) return defaultSettings;
-    const parsed = JSON.parse(raw);
-    return {
-      ...defaultSettings,
-      ...parsed,
-      widgetMode: normalizeMode(parsed.widgetMode ?? parsed.widgetModePreference),
-      isGlanceOpen: Boolean(parsed.isGlanceOpen ?? parsed.isTaskPanelOpen),
-      themeMode: normalizeTheme(parsed.themeMode),
-      desktopLocked: Boolean(parsed.desktopLocked ?? defaultSettings.desktopLocked),
-      autoStart: Boolean(parsed.autoStart ?? defaultSettings.autoStart),
-      mousePassthrough: Boolean(parsed.mousePassthrough ?? defaultSettings.mousePassthrough),
-    } as AppSettings;
-  } catch {
-    return defaultSettings;
-  }
-};
 
 async function hideWindow() {
   try {
@@ -357,23 +203,20 @@ function App() {
   const selectedItems = itemsByDate.get(selectedDate) ?? [];
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEYS.items, JSON.stringify(boardItems));
+    saveItems(boardItems);
   }, [boardItems]);
 
   useEffect(() => {
-    localStorage.setItem(
-      STORAGE_KEYS.settings,
-      JSON.stringify({
-        widgetMode,
-        isGlanceOpen,
-        opacity,
-        pinMode,
-        themeMode,
-        desktopLocked,
-        autoStart,
-        mousePassthrough,
-      }),
-    );
+    saveSettings({
+      widgetMode,
+      isGlanceOpen,
+      opacity,
+      pinMode,
+      themeMode,
+      desktopLocked,
+      autoStart,
+      mousePassthrough,
+    });
   }, [widgetMode, isGlanceOpen, opacity, pinMode, themeMode, desktopLocked, autoStart, mousePassthrough]);
 
   useEffect(() => {
@@ -605,7 +448,7 @@ function App() {
   };
 
   const resetLocalData = () => {
-    setBoardItems(seedItems);
+    setBoardItems(resetToSeedItems());
     setWidgetMode(defaultSettings.widgetMode);
     setIsGlanceOpen(defaultSettings.isGlanceOpen);
     setOpacity(defaultSettings.opacity);

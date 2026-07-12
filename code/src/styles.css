@@ -1377,9 +1377,7 @@ button.status-pill:focus-visible {
     padding: 0;
   }
 
-  .widget-shell,
-  .widget-shell--drawer-open {
-    grid-template-columns: 1fr;
+  .widget-shell {
     width: 100vw;
     height: 100vh;
     min-height: 0;
@@ -1411,27 +1409,12 @@ button.status-pill:focus-visible {
     grid-template-rows: repeat(6, minmax(0, 1fr));
   }
 
-  .settings-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .settings-sidebar {
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-  }
-
   .card-grid--two {
     grid-template-columns: 1fr;
   }
 
   .content-head {
     display: grid;
-  }
-
-  .week-calendar-board,
-  .fortnight-calendar-board {
-    grid-template-columns: 1fr;
-    grid-template-rows: none;
   }
 
   .account-card {
@@ -1456,10 +1439,6 @@ button.status-pill:focus-visible {
 
   .calendar-header {
     display: none;
-  }
-
-  .calendar-grid--monthly {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .form-grid,

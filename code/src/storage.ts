@@ -26,6 +26,7 @@ export type DayboardItem = {
   start: string;
   end: string;
   allDay?: boolean;
+  reminderMinutes?: number;
   kind: ItemKind;
   state: TaskState;
   calendar: CalendarName;
@@ -178,6 +179,7 @@ const isValidItem = (item: unknown): item is DayboardItem => {
     typeof o.id === "string" && o.id.length > 0 &&
     typeof o.title === "string" &&
     typeof o.date === "string" &&
+    (o.reminderMinutes === undefined || (typeof o.reminderMinutes === "number" && Number.isInteger(o.reminderMinutes) && o.reminderMinutes >= 0)) &&
     (o.kind === "event" || o.kind === "task") &&
     (o.state === "open" || o.state === "done") &&
     (o.calendar === "Local" || o.calendar === "Gmail" || o.calendar === "Outlook")

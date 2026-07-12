@@ -894,6 +894,12 @@ button {
   justify-self: start;
 }
 
+.danger-action--compact {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
 .timeline-stack--glance {
   display: grid;
   align-content: start;
@@ -1370,6 +1376,13 @@ button.status-pill:focus-visible {
   border-radius: var(--radius-lg);
 }
 
+.account-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
 .account-icon {
   display: grid;
   width: 40px;
@@ -1640,6 +1653,11 @@ button.status-pill:focus-visible {
   .account-card > .action-button {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .account-actions {
+    grid-column: 2;
+    align-items: flex-start;
   }
 }
 

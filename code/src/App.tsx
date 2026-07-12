@@ -14,10 +14,12 @@ import {
   X,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { DragEvent, FormEvent, PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type AppSettings, type CalendarName, type CalendarSource, type DayboardItem, type DraftItem, type EffectiveTheme, type ItemKind, type PinMode, type TaskState, type ThemeMode, type WidgetMode, defaultSettings, loadCalendarSources, loadItems, loadSettings, localCalendarSource, resetToSeedItems, saveCalendarSources, saveItems, saveSettings } from "./storage";
 
 import { getAuthUrl, handleAuthCallback, isGoogleConnected, disconnectGoogle, fetchCalendarEvents, listCalendars, readOauthLog, createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleEvent, moveGoogleEvent } from "./sync/google";
+import { clearReminderDeliveries, getDueReminders, loadReminderDeliveries, saveReminderDeliveries, type ReminderDelivery } from "./reminders";
 type EditorState =
   | { mode: "create"; draft: DraftItem }
   | { mode: "edit"; id: string; draft: DraftItem }
@@ -42,8 +44,18 @@ type DragPreviewState = {
   width: number;
 } | null;
 
+type UpdateState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "up-to-date"; version: string }
+  | { kind: "available"; version: string; url: string }
+  | { kind: "unavailable" }
+  | { kind: "error"; message: string };
+
 
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
+const APP_VERSION = "0.1.0";
+const UPDATE_API_URL = "https://api.github.com/repos/sebowang/Dayboard/releases/latest";
 
 const toneClass: Record<CalendarName, string> = {
   Local: "source-local",
@@ -56,6 +68,16 @@ const calendarFallbackColors = ["#6ea8fe", "#75d5e8", "#8fd19e", "#f0b86e", "#d4
 const getCalendarFallbackColor = (id: string) => {
   const hash = Array.from(id).reduce((value, character) => value + character.charCodeAt(0), 0);
   return calendarFallbackColors[hash % calendarFallbackColors.length];
+};
+
+const compareVersions = (left: string, right: string) => {
+  const leftParts = left.replace(/^v/, "").split(".").map(Number);
+  const rightParts = right.replace(/^v/, "").split(".").map(Number);
+  for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
 };
 
 const formatDateKey = (date: Date) => {
@@ -200,10 +222,12 @@ function App() {
   const [draggingItemId, setDraggingItemId] = useState<string | null>(null);
   const [dropTargetDate, setDropTargetDate] = useState<string | null>(null);
   const [dragPreview, setDragPreview] = useState<DragPreviewState>(null);
+  const [updateState, setUpdateState] = useState<UpdateState>({ kind: "idle" });
   const dragClickGuardUntil = useRef(0);
   const pointerDrag = useRef<PointerDragState | null>(null);
   const syncInFlight = useRef(false);
   const lastSyncAt = useRef(0);
+  const reminderDeliveries = useRef<ReminderDelivery>(loadReminderDeliveries());
 
   const monthDates = useMemo(() => getMonthDates(currentMonth), [currentMonth]);
   const weekDates = useMemo(() => getRangeDates(selectedDate, 7), [selectedDate]);
@@ -245,6 +269,38 @@ function App() {
     setToast(message);
     if (toastTimer.current) window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(""), 2200);
+  }, []);
+
+  const ensureNotificationPermission = useCallback(async () => {
+    try {
+      if (await isPermissionGranted()) return true;
+      const permission = await requestPermission();
+      if (permission === "granted") return true;
+      showNotice("未获得系统通知权限，提醒不会弹出。");
+    } catch {
+      showNotice("无法请求系统通知权限，请在 Windows 设置中检查通知权限。");
+    }
+    return false;
+  }, [showNotice]);
+
+  const checkForUpdates = useCallback(async () => {
+    setUpdateState({ kind: "checking" });
+    try {
+      const response = await fetch(UPDATE_API_URL, { headers: { Accept: "application/vnd.github+json" } });
+      if (response.status === 404) {
+        setUpdateState({ kind: "unavailable" });
+        return;
+      }
+      if (!response.ok) throw new Error(`检查服务返回 ${response.status}`);
+      const release = await response.json() as { tag_name?: string; html_url?: string };
+      const version = release.tag_name?.replace(/^v/, "");
+      if (!version || !release.html_url) throw new Error("发布信息不完整");
+      setUpdateState(compareVersions(version, APP_VERSION) > 0
+        ? { kind: "available", version, url: release.html_url }
+        : { kind: "up-to-date", version });
+    } catch (error) {
+      setUpdateState({ kind: "error", message: error instanceof Error ? error.message : "无法连接更新服务" });
+    }
   }, []);
 
   const syncGoogleCalendars = useCallback(async (announce = false) => {
@@ -344,6 +400,37 @@ function App() {
 
   useEffect(() => {
     saveItems(boardItems);
+  }, [boardItems]);
+
+  useEffect(() => {
+    let disposed = false;
+    const deliverDueReminders = async () => {
+      try {
+        if (!await isPermissionGranted()) return;
+        const dueReminders = getDueReminders(boardItems, reminderDeliveries.current);
+        if (!dueReminders.length) return;
+        const deliveries = { ...reminderDeliveries.current };
+        dueReminders.forEach(({ item, key, triggerAt }) => {
+          sendNotification({
+            title: item.title,
+            body: item.allDay ? "今天的全天日程" : `${item.start} 开始`,
+          });
+          deliveries[key] = triggerAt;
+        });
+        if (!disposed) {
+          reminderDeliveries.current = deliveries;
+          saveReminderDeliveries(deliveries);
+        }
+      } catch {
+        // A failed native notification should not interrupt the calendar UI.
+      }
+    };
+    void deliverDueReminders();
+    const timer = window.setInterval(() => void deliverDueReminders(), 30_000);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
   }, [boardItems]);
 
   useEffect(() => {
@@ -469,6 +556,11 @@ function App() {
       if (!current) return current;
       return { ...current, draft: { ...current.draft, [key]: value } };
     });
+  };
+
+  const setDraftReminder = async (minutes: number | undefined) => {
+    if (minutes !== undefined && !await ensureNotificationPermission()) return;
+    setDraftValue("reminderMinutes", minutes);
   };
 
   const setDraftCalendar = (sourceId: string) => {
@@ -832,6 +924,8 @@ function App() {
 
   const resetLocalData = () => {
     setBoardItems(resetToSeedItems());
+    clearReminderDeliveries();
+    reminderDeliveries.current = {};
     setWidgetMode(defaultSettings.widgetMode);
     setIsGlanceOpen(defaultSettings.isGlanceOpen);
     setOpacity(defaultSettings.opacity);
@@ -1388,6 +1482,30 @@ function App() {
               </label>
             </div>
 
+            {editor.draft.kind === "event" && (
+              <label className="field" htmlFor="editor-reminder">
+                <span>提醒</span>
+                <select
+                  id="editor-reminder"
+                  value={editor.draft.reminderMinutes ?? ""}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    void setDraftReminder(value === "" ? undefined : Number(value));
+                  }}
+                >
+                  <option value="">不提醒</option>
+                  <option value="0">开始时</option>
+                  <option value="5">提前 5 分钟</option>
+                  <option value="10">提前 10 分钟</option>
+                  <option value="15">提前 15 分钟</option>
+                  <option value="30">提前 30 分钟</option>
+                  <option value="60">提前 1 小时</option>
+                  <option value="120">提前 2 小时</option>
+                  <option value="1440">提前 1 天</option>
+                </select>
+              </label>
+            )}
+
             <div className="form-grid">
               <label className="field" htmlFor="editor-calendar">
                 <span>日历</span>
@@ -1530,7 +1648,16 @@ function App() {
                         </div>
                       </div>
                       {googleConnected ? (
-                        <span className="status-chip"><i />CONNECTED</span>
+                        <div className="account-actions">
+                          <span className="status-chip"><i />CONNECTED</span>
+                          <button
+                            className="danger-action danger-action--compact"
+                            type="button"
+                            onClick={disconnectGoogleAccount}
+                          >
+                            断开
+                          </button>
+                        </div>
                       ) : (
                         <button
                           className="action-button"
@@ -1542,20 +1669,6 @@ function App() {
                         </button>
                       )}
                     </article>
-
-                    {googleConnected && (
-                      <article className="account-card">
-                        <div className="account-main" style={{ width: "100%" }}>
-                          <button
-                            className="danger-action standalone"
-                            type="button"
-                            onClick={disconnectGoogleAccount}
-                          >
-                            断开 Google 日历
-                          </button>
-                        </div>
-                      </article>
-                    )}
 
                     <article className="account-card">
                       <div className="account-icon">O</div>
@@ -1838,6 +1951,34 @@ function App() {
                     <button className="danger-action standalone" type="button" onClick={resetLocalData}>
                       恢复示例数据
                     </button>
+                  </section>
+
+                  <section className="setting-card">
+                    <h3>软件更新</h3>
+                    <p>当前版本 {APP_VERSION}。更新信息来自 Dayboard 的 GitHub Releases。</p>
+                    <div className="settings-row">
+                      <div className="row-copy">
+                        <strong>
+                          {updateState.kind === "checking" ? "正在检查更新" : "检查更新"}
+                        </strong>
+                        <span>
+                          {updateState.kind === "idle" && "尚未检查更新。"}
+                          {updateState.kind === "checking" && "正在连接发布服务。"}
+                          {updateState.kind === "up-to-date" && `已是最新版本（${updateState.version}）。`}
+                          {updateState.kind === "available" && `发现新版本 ${updateState.version}。`}
+                          {updateState.kind === "unavailable" && "仓库尚未发布可下载版本。"}
+                          {updateState.kind === "error" && `检查失败：${updateState.message}`}
+                        </span>
+                      </div>
+                      <button
+                        className="action-button"
+                        type="button"
+                        disabled={updateState.kind === "checking"}
+                        onClick={() => void checkForUpdates()}
+                      >
+                        {updateState.kind === "checking" ? "检查中..." : "检查更新"}
+                      </button>
+                    </div>
                   </section>
                 </section>
               )}

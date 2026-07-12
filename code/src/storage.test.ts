@@ -1,15 +1,18 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   loadItems,
+  loadCalendarSources,
   saveItems,
+  saveCalendarSources,
   loadSettings,
   saveSettings,
   resetToSeedItems,
   seedItems,
   defaultSettings,
   STORAGE_KEYS,
+  localCalendarSource,
 } from "./storage";
-import type { DayboardItem, AppSettings } from "./storage";
+import type { DayboardItem, AppSettings, CalendarSource } from "./storage";
 
 // Mock localStorage
 const store = new Map<string, string>();
@@ -84,7 +87,7 @@ describe("saveItems", () => {
 
   it("round-trips correctly", () => {
     const items: DayboardItem[] = [
-      { id: "x", title: "X", date: "2026-07-12", start: "09:00", end: "10:00", kind: "event", state: "open", calendar: "Gmail", note: "hello" },
+      { id: "x", title: "X", date: "2026-07-12", start: "", end: "", allDay: true, kind: "event", state: "open", calendar: "Gmail", note: "hello" },
     ];
     saveItems(items);
     expect(loadItems()).toEqual(items);
@@ -146,5 +149,33 @@ describe("resetToSeedItems", () => {
     const result = resetToSeedItems();
     expect(result).toEqual(seedItems);
     expect(loadItems()).toEqual(seedItems);
+  });
+});
+
+describe("calendar sources", () => {
+  it("starts with the local calendar", () => {
+    expect(loadCalendarSources()).toEqual([localCalendarSource]);
+  });
+
+  it("persists calendar visibility and restores the local source first", () => {
+    const sources: CalendarSource[] = [
+      { ...localCalendarSource, visible: false },
+      {
+        id: "google:team@example.com",
+        provider: "google",
+        remoteId: "team@example.com",
+        name: "团队日历",
+        accountLabel: "Google",
+        writable: true,
+        visible: false,
+      },
+    ];
+    saveCalendarSources(sources);
+    expect(loadCalendarSources()).toEqual(sources);
+  });
+
+  it("falls back to the local calendar when stored sources are corrupt", () => {
+    store.set(STORAGE_KEYS.calendars, "bad");
+    expect(loadCalendarSources()).toEqual([localCalendarSource]);
   });
 });

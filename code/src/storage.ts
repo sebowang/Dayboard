@@ -4,7 +4,20 @@ export type EffectiveTheme = "dark" | "light";
 export type TaskState = "open" | "done";
 export type ItemKind = "event" | "task";
 export type CalendarName = "Local" | "Gmail" | "Outlook";
+export type CalendarProvider = "local" | "google" | "outlook";
 export type PinMode = "normal" | "desktop" | "top";
+
+export type CalendarSource = {
+  id: string;
+  provider: CalendarProvider;
+  remoteId?: string;
+  name: string;
+  accountLabel: string;
+  color?: string;
+  primary?: boolean;
+  writable: boolean;
+  visible: boolean;
+};
 
 export type DayboardItem = {
   id: string;
@@ -12,9 +25,14 @@ export type DayboardItem = {
   date: string;
   start: string;
   end: string;
+  allDay?: boolean;
   kind: ItemKind;
   state: TaskState;
   calendar: CalendarName;
+  calendarId?: string;
+  calendarLabel?: string;
+  calendarColor?: string;
+  remoteId?: string;
   note: string;
 };
 
@@ -41,7 +59,18 @@ export type AppSettings = {
 export const STORAGE_KEYS = {
   items: "dayboard.items.v1",
   settings: "dayboard.settings.v5",
+  calendars: "dayboard.calendars.v1",
 } as const;
+
+export const localCalendarSource: CalendarSource = {
+  id: "local",
+  provider: "local",
+  name: "本地日历",
+  accountLabel: "Dayboard",
+  color: "#75d5e8",
+  writable: true,
+  visible: true,
+};
 
 export const defaultSettings: AppSettings = {
   widgetMode: "month",
@@ -155,6 +184,19 @@ const isValidItem = (item: unknown): item is DayboardItem => {
   );
 };
 
+const isValidCalendarSource = (source: unknown): source is CalendarSource => {
+  if (!source || typeof source !== "object") return false;
+  const value = source as Record<string, unknown>;
+  return (
+    typeof value.id === "string" && value.id.length > 0 &&
+    (value.provider === "local" || value.provider === "google" || value.provider === "outlook") &&
+    typeof value.name === "string" && value.name.length > 0 &&
+    typeof value.accountLabel === "string" &&
+    typeof value.writable === "boolean" &&
+    typeof value.visible === "boolean"
+  );
+};
+
 export const loadItems = (): DayboardItem[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.items);
@@ -203,6 +245,21 @@ export const loadSettings = (): AppSettings => {
   }
 };
 
+export const loadCalendarSources = (): CalendarSource[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.calendars);
+    if (!raw) return [localCalendarSource];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [localCalendarSource];
+    const sources = parsed.filter(isValidCalendarSource);
+    const remoteSources = sources.filter((source) => source.id !== localCalendarSource.id);
+    const storedLocal = sources.find((source) => source.id === localCalendarSource.id);
+    return [{ ...localCalendarSource, visible: storedLocal?.visible ?? true }, ...remoteSources];
+  } catch {
+    return [localCalendarSource];
+  }
+};
+
 /* ---- save ---- */
 
 export const saveItems = (items: DayboardItem[]): void => {
@@ -218,6 +275,14 @@ export const saveSettings = (settings: AppSettings): void => {
     localStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(settings));
   } catch (e) {
     console.error("[storage] saveSettings failed:", e);
+  }
+};
+
+export const saveCalendarSources = (sources: CalendarSource[]): void => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.calendars, JSON.stringify(sources));
+  } catch (e) {
+    console.error("[storage] saveCalendarSources failed:", e);
   }
 };
 

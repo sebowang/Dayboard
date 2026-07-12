@@ -91,13 +91,15 @@ button {
 .theme-light .widget-shell,
 .theme-light .editor-sheet,
 .theme-light .settings-window,
-.theme-light .panel--glance-drawer {
+.theme-light .panel--glance-drawer,
+.theme-light .panel--calendar-sources {
   background: rgba(246, 250, 252, var(--panel-opacity));
   border-color: rgba(28, 46, 62, 0.1);
   box-shadow: 0 24px 70px rgba(44, 64, 82, 0.18);
 }
 
 .theme-light .icon-button,
+.theme-light .today-button,
 .theme-light .view-switch,
 .theme-light .segmented,
 .theme-light .pin-options,
@@ -152,6 +154,14 @@ button {
 
 .widget-shell--drawer-open {
   grid-template-columns: minmax(0, 1fr) minmax(232px, 268px);
+}
+
+.widget-shell--sources-open {
+  grid-template-columns: minmax(210px, 236px) minmax(0, 1fr);
+}
+
+.widget-shell--sources-open.widget-shell--drawer-open {
+  grid-template-columns: minmax(210px, 236px) minmax(0, 1fr) minmax(232px, 268px);
 }
 
 .panel {
@@ -260,6 +270,25 @@ button {
   outline: none;
 }
 
+.today-button {
+  min-height: 36px;
+  padding: 0 10px;
+  color: var(--muted-strong);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.today-button:hover,
+.today-button:focus-visible {
+  color: var(--fg);
+  background: rgba(117, 213, 232, 0.1);
+  border-color: rgba(117, 213, 232, 0.2);
+  outline: none;
+}
+
 .icon-button:disabled {
   cursor: default;
   color: color-mix(in oklab, var(--muted) 74%, transparent);
@@ -314,7 +343,7 @@ button {
 .calendar-month {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 8px;
+  gap: 5px;
   min-height: 0;
   overflow: hidden;
 }
@@ -323,10 +352,10 @@ button {
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 8px;
 }
 
 .calendar-header {
+  gap: 1px;
   padding: 0 2px;
   color: var(--muted);
   font-size: 12px;
@@ -335,27 +364,36 @@ button {
 }
 
 .calendar-grid--monthly {
+  gap: 1px;
   grid-template-rows: repeat(6, minmax(0, 1fr));
   align-content: stretch;
   min-height: 0;
   height: 100%;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 6px;
 }
 
 .week-calendar-board,
 .fortnight-calendar-board {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 10px;
+  gap: 1px;
   align-items: stretch;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.055);
+  border-radius: 6px;
 }
 
 .week-calendar-board {
-  grid-auto-rows: minmax(144px, auto);
+  grid-auto-rows: minmax(120px, auto);
   height: auto;
 }
 
 .fortnight-calendar-board {
-  grid-template-rows: repeat(2, minmax(144px, auto));
+  grid-template-rows: repeat(2, minmax(120px, auto));
   height: auto;
 }
 
@@ -363,43 +401,48 @@ button {
   position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 8px;
+  gap: 4px;
   min-width: 0;
   overflow: hidden;
   color: var(--fg);
   text-align: left;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.015);
+  border: 0;
+  border-radius: 0;
 }
 
 .calendar-cell--month {
   min-height: 0;
-  padding: 10px;
+  padding: 5px;
 }
 
 .calendar-cell--week {
-  min-height: 144px;
-  padding: 14px 12px 12px;
+  min-height: 120px;
+  padding: 7px 6px;
 }
 
 .calendar-cell--muted {
   color: rgba(255, 255, 255, 0.34);
-  background: rgba(255, 255, 255, 0.025);
+  background: rgba(0, 0, 0, 0.055);
 }
 
 .calendar-cell--today {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(117, 213, 232, 0.22);
+  background: rgba(255, 255, 255, 0.025);
 }
 
 .calendar-cell--today .calendar-cell__day {
-  color: var(--accent);
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  color: oklch(22% 0.025 245);
+  background: var(--accent);
+  border-radius: 999px;
 }
 
 .calendar-cell--selected {
-  background: rgba(117, 213, 232, 0.1);
-  border-color: rgba(117, 213, 232, 0.32);
+  background: rgba(117, 213, 232, 0.045);
+  box-shadow: none;
 }
 
 .calendar-cell--selected .calendar-cell__day {
@@ -407,12 +450,32 @@ button {
 }
 
 .calendar-cell--selected:not(.calendar-cell--today) {
-  box-shadow: inset 0 0 0 1px rgba(117, 213, 232, 0.18);
+  box-shadow: inset 0 0 0 1px rgba(117, 213, 232, 0.1);
 }
 
 .calendar-cell--drop-target {
-  background: rgba(117, 213, 232, 0.16);
-  border-color: rgba(117, 213, 232, 0.58);
+  background: rgba(117, 213, 232, 0.09);
+  box-shadow: inset 0 0 0 1px rgba(117, 213, 232, 0.34);
+}
+
+.theme-light .calendar-grid--monthly,
+.theme-light .week-calendar-board,
+.theme-light .fortnight-calendar-board {
+  background: rgba(31, 52, 70, 0.07);
+  border-color: rgba(31, 52, 70, 0.08);
+}
+
+.theme-light .calendar-cell {
+  background: rgba(255, 255, 255, 0.54);
+}
+
+.theme-light .calendar-cell--muted {
+  color: rgba(31, 52, 70, 0.42);
+  background: rgba(31, 52, 70, 0.025);
+}
+
+.theme-light .calendar-cell--selected {
+  background: rgba(73, 156, 190, 0.055);
 }
 
 .calendar-cell__head {
@@ -429,14 +492,14 @@ button {
 }
 
 .calendar-cell__day {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1;
 }
 
 .calendar-cell__head small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
 }
 
@@ -445,7 +508,7 @@ button {
   z-index: 2;
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: 2px;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
@@ -495,21 +558,21 @@ button {
 .task-pill {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 6px;
+  gap: 4px;
   width: 100%;
-  min-height: 24px;
+  min-height: 18px;
   align-items: center;
-  padding: 5px 8px;
+  padding: 2px 5px;
   overflow: hidden;
   color: rgba(242, 250, 251, 0.96);
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
   background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.065);
-  border-radius: 9px;
-  font-size: 12px;
-  line-height: 1.25;
+  border: 0;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.15;
   cursor: grab;
   pointer-events: auto;
   user-select: none;
@@ -522,14 +585,14 @@ button {
 
 .calendar-cell--month .task-pill {
   display: block;
-  min-height: 21px;
-  padding: 4px 7px;
-  font-size: 11px;
+  min-height: 17px;
+  padding: 2px 4px;
+  font-size: 10px;
 }
 
 .task-pill span {
   color: var(--accent);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
 }
 
@@ -543,6 +606,23 @@ button {
 
 .source-local {
   background: rgba(255, 255, 255, 0.06);
+}
+
+.task-pill {
+  background: color-mix(in oklab, var(--calendar-color) 13%, transparent);
+}
+
+.theme-light .task-pill {
+  background: color-mix(in oklab, var(--calendar-color) 10%, white);
+}
+
+.task-pill:focus-visible {
+  outline: 1px solid var(--calendar-color);
+  outline-offset: 1px;
+}
+
+.task-pill span {
+  color: var(--calendar-color);
 }
 
 .task-pill.is-done,
@@ -617,6 +697,128 @@ button {
   background: color-mix(in oklab, var(--surface-strong) 92%, black 8%);
   border-left: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.03);
+}
+
+.panel--calendar-sources {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 18px;
+  min-height: 0;
+  padding: 20px;
+  background: color-mix(in oklab, var(--surface-strong) 92%, black 8%);
+}
+
+.source-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.source-panel-head h2 {
+  margin: 4px 0 0;
+  font-size: 24px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.calendar-source-groups {
+  display: grid;
+  align-content: start;
+  gap: 20px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.calendar-source-group {
+  display: grid;
+  gap: 8px;
+}
+
+.calendar-source-group h3 {
+  margin: 0 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.calendar-source-option {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  padding: 7px 8px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.calendar-source-option:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.calendar-source-option input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.calendar-source-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--muted);
+}
+
+.calendar-source-dot.source-local {
+  background: var(--accent);
+}
+
+.calendar-source-dot.source-gmail {
+  background: var(--warning);
+}
+
+.calendar-source-dot.source-outlook {
+  background: oklch(66% 0.14 255);
+}
+
+.calendar-source-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.calendar-source-copy strong,
+.calendar-source-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calendar-source-copy strong {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.calendar-source-copy small,
+.source-panel-note {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.source-panel-note {
+  margin: 0;
+}
+
+.is-spinning {
+  animation: sync-spin 800ms linear infinite;
+}
+
+@keyframes sync-spin {
+  to { transform: rotate(360deg); }
 }
 
 .timeline-header--glance {
@@ -711,7 +913,13 @@ button {
 }
 
 .event-card--event {
-  background: linear-gradient(180deg, rgba(117, 213, 232, 0.12), rgba(255, 255, 255, 0.045));
+  background: color-mix(in oklab, var(--calendar-color) 16%, var(--surface-soft));
+  border-color: color-mix(in oklab, var(--calendar-color) 34%, transparent);
+}
+
+.theme-light .event-card--event {
+  background: color-mix(in oklab, var(--calendar-color) 12%, white);
+  border-color: color-mix(in oklab, var(--calendar-color) 30%, transparent);
 }
 
 .event-card__top {
@@ -916,6 +1124,20 @@ button.status-pill:focus-visible {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.all-day-row {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 2px;
+}
+
+.field input:disabled {
+  cursor: default;
+  opacity: 0.48;
 }
 
 .editor-actions {
@@ -1385,13 +1607,6 @@ button.status-pill:focus-visible {
 
   .panel {
     padding: 20px;
-    border-right: 0;
-  }
-
-  .panel--glance-drawer {
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    border-left: 0;
-    box-shadow: none;
   }
 
   .panel-topline {
@@ -1425,6 +1640,12 @@ button.status-pill:focus-visible {
   .account-card > .action-button {
     grid-column: 2;
     justify-self: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-spinning {
+    animation: none;
   }
 }
 

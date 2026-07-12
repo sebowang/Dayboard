@@ -5,17 +5,19 @@ import {
   ChevronRight,
   Circle,
   Link2,
+  ListFilter,
   Plus,
+  RefreshCw,
   Save,
   Settings,
   Trash2,
   X,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { DragEvent, FormEvent, PointerEvent, useEffect, useMemo, useRef, useState } from "react";
-import { type AppSettings, type CalendarName, type DayboardItem, type DraftItem, type EffectiveTheme, type ItemKind, type PinMode, type TaskState, type ThemeMode, type WidgetMode, defaultSettings, loadItems, loadSettings, resetToSeedItems, saveItems, saveSettings, seedItems, STORAGE_KEYS } from "./storage";
+import { DragEvent, FormEvent, PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type AppSettings, type CalendarName, type CalendarSource, type DayboardItem, type DraftItem, type EffectiveTheme, type ItemKind, type PinMode, type TaskState, type ThemeMode, type WidgetMode, defaultSettings, loadCalendarSources, loadItems, loadSettings, localCalendarSource, resetToSeedItems, saveCalendarSources, saveItems, saveSettings } from "./storage";
 
-import { getAuthUrl, handleAuthCallback, isGoogleConnected, disconnectGoogle, fetchCalendarEvents, readOauthLog, createGoogleEvent, updateGoogleEvent, deleteGoogleEvent } from "./sync/google";
+import { getAuthUrl, handleAuthCallback, isGoogleConnected, disconnectGoogle, fetchCalendarEvents, listCalendars, readOauthLog, createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleEvent, moveGoogleEvent } from "./sync/google";
 type EditorState =
   | { mode: "create"; draft: DraftItem }
   | { mode: "edit"; id: string; draft: DraftItem }
@@ -47,6 +49,13 @@ const toneClass: Record<CalendarName, string> = {
   Local: "source-local",
   Gmail: "source-gmail",
   Outlook: "source-outlook",
+};
+
+const calendarFallbackColors = ["#6ea8fe", "#75d5e8", "#8fd19e", "#f0b86e", "#d49bf0", "#f08f8f"];
+
+const getCalendarFallbackColor = (id: string) => {
+  const hash = Array.from(id).reduce((value, character) => value + character.charCodeAt(0), 0);
+  return calendarFallbackColors[hash % calendarFallbackColors.length];
 };
 
 const formatDateKey = (date: Date) => {
@@ -100,6 +109,7 @@ const formatPeriodLabel = (dateKey: string) => {
 };
 
 const formatItemTime = (item: DayboardItem | DraftItem) => {
+  if (item.kind === "event" && item.allDay) return "全天";
   if (item.start && item.end) return `${item.start} - ${item.end}`;
   if (item.start) return item.start;
   return item.kind === "event" ? "全天" : "TASK";
@@ -110,9 +120,13 @@ const emptyDraft = (date: string): DraftItem => ({
   date,
   start: "",
   end: "",
+  allDay: false,
   kind: "task",
   state: "open",
   calendar: "Local",
+  calendarId: "local",
+  calendarLabel: "本地日历",
+  calendarColor: localCalendarSource.color,
   note: "",
 });
 
@@ -163,6 +177,8 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [settingsTab, setSettingsTab] = useState<"accounts" | "widget">("widget");
   const [isGlanceOpen, setIsGlanceOpen] = useState(initialSettings.isGlanceOpen);
+  const [isCalendarPanelOpen, setIsCalendarPanelOpen] = useState(false);
+  const [calendarSources, setCalendarSources] = useState<CalendarSource[]>(loadCalendarSources);
   const [opacity, setOpacity] = useState(initialSettings.opacity);
   const [pinMode, setPinMode] = useState<PinMode>(initialSettings.pinMode);
   const [themeMode, setThemeMode] = useState<ThemeMode>(initialSettings.themeMode);
@@ -186,30 +202,153 @@ function App() {
   const [dragPreview, setDragPreview] = useState<DragPreviewState>(null);
   const dragClickGuardUntil = useRef(0);
   const pointerDrag = useRef<PointerDragState | null>(null);
+  const syncInFlight = useRef(false);
+  const lastSyncAt = useRef(0);
 
   const monthDates = useMemo(() => getMonthDates(currentMonth), [currentMonth]);
   const weekDates = useMemo(() => getRangeDates(selectedDate, 7), [selectedDate]);
   const fortnightDates = useMemo(() => getRangeDates(selectedDate, 14), [selectedDate]);
   const monthTitle = useMemo(() => formatMonthTitle(currentMonth), [currentMonth]);
 
+  const primaryGoogleSource = useMemo(
+    () => calendarSources.find((source) => source.provider === "google" && source.primary),
+    [calendarSources],
+  );
+  const visibleCalendarIds = useMemo(
+    () => new Set(calendarSources.filter((source) => source.visible).map((source) => source.id)),
+    [calendarSources],
+  );
   const itemsByDate = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
+    const visibleItems = boardItems.filter((item) => {
+      const sourceId = item.calendar === "Local"
+        ? "local"
+        : item.calendar === "Gmail"
+          ? `google:${item.calendarId ?? primaryGoogleSource?.remoteId ?? "primary"}`
+          : `outlook:${item.calendarId ?? "default"}`;
+      return visibleCalendarIds.has(sourceId);
+    });
     const source = q
-      ? boardItems.filter((item) => item.title.toLowerCase().includes(q))
-      : boardItems;
+      ? visibleItems.filter((item) => item.title.toLowerCase().includes(q))
+      : visibleItems;
     const grouped = new Map<string, DayboardItem[]>();
     source.forEach((item) => {
       grouped.set(item.date, [...(grouped.get(item.date) ?? []), item]);
     });
     grouped.forEach((items) => items.sort((a, b) => a.start.localeCompare(b.start)));
     return grouped;
-  }, [boardItems, searchQuery]);
+  }, [boardItems, primaryGoogleSource, searchQuery, visibleCalendarIds]);
 
   const selectedItems = itemsByDate.get(selectedDate) ?? [];
+
+  const showNotice = useCallback((message: string) => {
+    setToast(message);
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(""), 2200);
+  }, []);
+
+  const syncGoogleCalendars = useCallback(async (announce = false) => {
+    if (!isGoogleConnected()) {
+      if (announce) showNotice("请先连接 Google 日历再同步。");
+      return;
+    }
+    if (syncInFlight.current) return;
+
+    syncInFlight.current = true;
+    setSyncing(true);
+    try {
+      const calendars = await listCalendars();
+      const googleSources: CalendarSource[] = calendars.map((calendar) => ({
+        id: `google:${calendar.id}`,
+        provider: "google",
+        remoteId: calendar.id,
+        name: calendar.summary || (calendar.primary ? "主日历" : "未命名日历"),
+        accountLabel: "Google",
+        color: calendar.backgroundColor || getCalendarFallbackColor(calendar.id),
+        primary: calendar.primary,
+        writable: calendar.accessRole === "owner" || calendar.accessRole === "writer",
+        visible: true,
+      }));
+
+      setCalendarSources((current) => {
+        const visibility = new Map(current.map((source) => [source.id, source.visible]));
+        const local = current.find((source) => source.id === "local") ?? localCalendarSource;
+        return [
+          local,
+          ...googleSources.map((source) => ({
+            ...source,
+            visible: visibility.get(source.id) ?? true,
+          })),
+          ...current.filter((source) => source.provider === "outlook"),
+        ];
+      });
+
+      const rangeStart = new Date();
+      rangeStart.setHours(0, 0, 0, 0);
+      rangeStart.setDate(rangeStart.getDate() - 7);
+      const rangeEnd = new Date();
+      rangeEnd.setHours(0, 0, 0, 0);
+      rangeEnd.setDate(rangeEnd.getDate() + 37);
+      const events = await fetchCalendarEvents(
+        rangeStart.toISOString(),
+        rangeEnd.toISOString(),
+        calendars.map((calendar) => calendar.id),
+      );
+      const calendarNames = new Map(calendars.map((calendar) => [calendar.id, calendar.summary]));
+      const calendarColors = new Map(calendars.map((calendar) => [
+        calendar.id,
+        calendar.backgroundColor || getCalendarFallbackColor(calendar.id),
+      ]));
+      const imported: DayboardItem[] = events
+        .filter((event) => event.status !== "cancelled")
+        .map((event) => {
+          const date = event.start?.date
+            ? event.start.date
+            : event.start?.dateTime?.slice(0, 10) ?? todayKey;
+          const calendarId = event.calendarId ?? "primary";
+          return {
+            id: `gcal-${encodeURIComponent(calendarId)}-${event.id}`,
+            remoteId: event.id,
+            title: event.summary || "(无标题)",
+            date,
+            start: event.start?.date ? "" : event.start?.dateTime?.slice(11, 16) ?? "",
+            end: event.start?.date ? "" : event.end?.dateTime?.slice(11, 16) ?? "",
+            allDay: Boolean(event.start?.date),
+            kind: "event" as const,
+            state: "open" as const,
+            calendar: "Gmail" as const,
+            calendarId,
+            calendarLabel: event.calendarSummary || calendarNames.get(calendarId) || "Google 日历",
+            calendarColor: calendarColors.get(calendarId),
+            note: event.description ?? "",
+          };
+        });
+
+      setBoardItems((current) => [
+        ...current.filter((item) => item.calendar !== "Gmail"),
+        ...imported,
+      ]);
+      setGoogleConnected(true);
+      setRetryMessage("");
+      lastSyncAt.current = Date.now();
+      if (announce) showNotice(`已同步 ${calendars.length} 个日历、${imported.length} 条日程。`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setRetryMessage(`同步失败：${message}`);
+      if (announce) showNotice(`同步失败：${message}`);
+    } finally {
+      syncInFlight.current = false;
+      setSyncing(false);
+    }
+  }, [showNotice]);
 
   useEffect(() => {
     saveItems(boardItems);
   }, [boardItems]);
+
+  useEffect(() => {
+    saveCalendarSources(calendarSources);
+  }, [calendarSources]);
 
   useEffect(() => {
     saveSettings({
@@ -228,6 +367,20 @@ function App() {
   useEffect(() => {
     void applyWindowBehavior(pinMode, desktopLocked);
   }, [pinMode, desktopLocked]);
+
+  useEffect(() => {
+    if (!googleConnected) return;
+    void syncGoogleCalendars(false);
+    const interval = window.setInterval(() => void syncGoogleCalendars(false), 15 * 60 * 1000);
+    const syncOnFocus = () => {
+      if (Date.now() - lastSyncAt.current >= 5 * 60 * 1000) void syncGoogleCalendars(false);
+    };
+    window.addEventListener("focus", syncOnFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", syncOnFocus);
+    };
+  }, [googleConnected, syncGoogleCalendars]);
 
   useEffect(() => {
     return () => {
@@ -311,16 +464,28 @@ function App() {
     }
   }, []);
 
-  const showNotice = (message: string) => {
-    setToast(message);
-    if (toastTimer.current) window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(""), 2200);
-  };
-
   const setDraftValue = <Key extends keyof DraftItem>(key: Key, value: DraftItem[Key]) => {
     setEditor((current) => {
       if (!current) return current;
       return { ...current, draft: { ...current.draft, [key]: value } };
+    });
+  };
+
+  const setDraftCalendar = (sourceId: string) => {
+    const source = calendarSources.find((calendar) => calendar.id === sourceId);
+    if (!source) return;
+    setEditor((current) => {
+      if (!current) return current;
+      return {
+        ...current,
+        draft: {
+          ...current.draft,
+          calendar: source.provider === "google" ? "Gmail" : source.provider === "outlook" ? "Outlook" : "Local",
+          calendarId: source.remoteId ?? source.id,
+          calendarLabel: source.name,
+          calendarColor: source.color,
+        },
+      };
     });
   };
 
@@ -338,7 +503,14 @@ function App() {
   const openEdit = (item: DayboardItem) => {
     const { id, ...draft } = item;
     selectDate(item.date, false);
-    setEditor({ mode: "edit", id, draft });
+    setEditor({
+      mode: "edit",
+      id,
+      draft: {
+        ...draft,
+        allDay: item.kind === "event" ? item.allDay ?? (!item.start && !item.end) : false,
+      },
+    });
   };
 
   const handleCloseEditor = () => {
@@ -347,56 +519,148 @@ function App() {
     setEditor(null);
   };
 
-  const saveDraft = (event: FormEvent<HTMLFormElement>) => {
+  const saveDraft = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!editor || !editor.draft.title.trim()) { if (editor && !editor.draft.title.trim()) showNotice("\u6807\u9898\u4e0d\u80fd\u4e3a\u7a7a\u3002"); return; }
 
-    const draft = { ...editor.draft, title: editor.draft.title.trim() };
+    let draft = { ...editor.draft, title: editor.draft.title.trim() };
+    if (draft.kind === "event") {
+      if (!draft.start && !draft.end) {
+        draft = { ...draft, allDay: true };
+      } else if (!draft.start || !draft.end) {
+        showNotice("请同时填写开始和结束时间，或开启全天。");
+        return;
+      } else if (draft.end <= draft.start) {
+        showNotice("结束时间需要晚于开始时间。");
+        return;
+      }
+    }
 
     if (editor.mode === "create") {
-      const item: DayboardItem = {
+      let item: DayboardItem = {
         id: `item-${crypto.randomUUID()}`,
         ...draft,
       };
+
+      if (item.calendar === "Gmail") {
+        if (!googleConnected) {
+          showNotice("请先连接 Google 日历。");
+          return;
+        }
+        try {
+          const googleId = await createGoogleEvent({
+            calendarId: item.calendarId ?? "primary",
+            title: item.title,
+            date: item.date,
+            start: item.start || undefined,
+            end: item.end || undefined,
+            allDay: item.allDay,
+            note: item.note || undefined,
+          });
+          item = {
+            ...item,
+            id: `gcal-${encodeURIComponent(item.calendarId ?? "primary")}-${googleId}`,
+            remoteId: googleId,
+          };
+        } catch (error) {
+          showNotice("Google 同步失败: " + (error as Error).message);
+          return;
+        }
+      }
+
       setBoardItems((current) => [...current, item]);
       selectDate(item.date, false);
-
-      // Push to Google if the item is a Gmail event
-      if (item.calendar === "Gmail" && googleConnected) {
-        createGoogleEvent({
-          title: item.title,
-          date: item.date,
-          start: item.start || undefined,
-          end: item.end || undefined,
-          note: item.note || undefined,
-        })
-          .then((googleId) => {
-            setBoardItems((current) =>
-              current.map((i) => (i.id === item.id ? { ...i, id: "gcal-" + googleId } : i))
-            );
-          })
-          .catch((err: Error) => showNotice("Google 同步失败: " + err.message));
-      }
     } else {
-      setBoardItems((current) =>
-        current.map((item) =>
-          item.id === editor.id
-            ? { id: editor.id, ...draft }
-            : item,
-        ),
-      );
-      selectDate(draft.date, false);
+      const existing = boardItems.find((item) => item.id === editor.id);
+      if (!existing) return;
+      let updatedItem: DayboardItem = { id: editor.id, ...draft };
 
-      // Push update to Google for Gmail-sourced items
-      if (draft.calendar === "Gmail" && editor.id.startsWith("gcal-") && googleConnected) {
-        updateGoogleEvent(editor.id.slice(5), {
-          title: draft.title,
-          date: draft.date,
-          start: draft.start || undefined,
-          end: draft.end || undefined,
-          note: draft.note || undefined,
-        }).catch((err: Error) => showNotice("Google 同步失败: " + err.message));
+      if ((existing.calendar === "Gmail" || draft.calendar === "Gmail") && !googleConnected) {
+        showNotice("修改 Google 日程前请先连接账号。");
+        return;
       }
+
+      try {
+        if (existing.calendar === "Gmail" && existing.remoteId) {
+          const sourceCalendarId = existing.calendarId ?? "primary";
+          if (draft.calendar === "Gmail") {
+            const targetCalendarId = draft.calendarId ?? "primary";
+            let targetRemoteId = existing.remoteId;
+            if (targetCalendarId !== sourceCalendarId) {
+              try {
+                await moveGoogleEvent(sourceCalendarId, targetCalendarId, existing.remoteId);
+              } catch (error) {
+                const message = error instanceof Error ? error.message : String(error);
+                const movedEvent = await getGoogleEvent(targetCalendarId, existing.remoteId).catch(() => null);
+                if (movedEvent) {
+                  targetRemoteId = movedEvent.id;
+                } else {
+                  if (!message.includes("cannotChangeOrganizer")) throw error;
+                  const shouldCopy = window.confirm(
+                    "这是一条由他人组织的邀请副本，Google 不允许直接迁移。是否在目标日历创建独立副本，并从原日历移除当前副本？参会人和会议邀请关系不会保留。",
+                  );
+                  if (!shouldCopy) return;
+                  targetRemoteId = await createGoogleEvent({
+                    calendarId: targetCalendarId,
+                    title: draft.title,
+                    date: draft.date,
+                    start: draft.start || undefined,
+                    end: draft.end || undefined,
+                    allDay: draft.allDay,
+                    note: draft.note || undefined,
+                  });
+                  try {
+                    await deleteGoogleEvent(sourceCalendarId, existing.remoteId);
+                  } catch (deleteError) {
+                    await deleteGoogleEvent(targetCalendarId, targetRemoteId).catch(() => undefined);
+                    throw deleteError;
+                  }
+                }
+              }
+            }
+            await updateGoogleEvent(targetCalendarId, targetRemoteId, {
+              title: draft.title,
+              date: draft.date,
+              start: draft.start || undefined,
+              end: draft.end || undefined,
+              allDay: draft.allDay,
+              note: draft.note || undefined,
+            });
+            updatedItem = {
+              ...updatedItem,
+              id: `gcal-${encodeURIComponent(targetCalendarId)}-${targetRemoteId}`,
+              remoteId: targetRemoteId,
+            };
+          } else {
+            await deleteGoogleEvent(sourceCalendarId, existing.remoteId);
+            updatedItem = { ...updatedItem, id: `item-${crypto.randomUUID()}`, remoteId: undefined };
+          }
+        } else if (draft.calendar === "Gmail") {
+          const targetCalendarId = draft.calendarId ?? "primary";
+          const googleId = await createGoogleEvent({
+            calendarId: targetCalendarId,
+            title: draft.title,
+            date: draft.date,
+            start: draft.start || undefined,
+            end: draft.end || undefined,
+            allDay: draft.allDay,
+            note: draft.note || undefined,
+          });
+          updatedItem = {
+            ...updatedItem,
+            id: `gcal-${encodeURIComponent(targetCalendarId)}-${googleId}`,
+            remoteId: googleId,
+          };
+        } else {
+          updatedItem = { ...updatedItem, remoteId: undefined };
+        }
+      } catch (error) {
+        showNotice("日历迁移失败: " + (error as Error).message);
+        return;
+      }
+
+      setBoardItems((current) => current.map((item) => item.id === editor.id ? updatedItem : item));
+      selectDate(draft.date, false);
     }
 
     setEditor(null);
@@ -410,8 +674,8 @@ function App() {
     setEditor(null);
 
     // Delete from Google for Gmail-sourced items
-    if (item && item.calendar === "Gmail" && itemId.startsWith("gcal-") && googleConnected) {
-      deleteGoogleEvent(itemId.slice(5)).catch((err: Error) =>
+    if (item?.calendar === "Gmail" && item.remoteId && googleConnected) {
+      deleteGoogleEvent(item.calendarId ?? "primary", item.remoteId).catch((err: Error) =>
         showNotice("Google " + err.message)
       );
     }
@@ -577,6 +841,8 @@ function App() {
     setAutoStart(defaultSettings.autoStart);
     setMousePassthrough(defaultSettings.mousePassthrough);
     setSyncOptions(defaultSettings.syncOptions);
+    setCalendarSources([localCalendarSource]);
+    setIsCalendarPanelOpen(false);
     setGoogleConnected(false);
     setLastOauthLog("");
     disconnectGoogle();
@@ -607,11 +873,24 @@ function App() {
   const disconnectGoogleAccount = () => {
     disconnectGoogle();
     setGoogleConnected(false);
+    setCalendarSources((current) => current.filter((source) => source.provider !== "google"));
+    setBoardItems((current) => current.filter((item) => item.calendar !== "Gmail"));
     showNotice("Google 日历已断开。");
   };
 
   const showLockedWindowHint = () => {
     showNotice("窗口已锁定，可在设置里关闭“锁定窗口”后拖动。");
+  };
+
+  const getItemCalendarColor = (item: DayboardItem | DraftItem) => {
+    if (item.calendarColor) return item.calendarColor;
+    const sourceId = item.calendar === "Local"
+      ? "local"
+      : item.calendar === "Gmail"
+        ? `google:${item.calendarId ?? primaryGoogleSource?.remoteId ?? "primary"}`
+        : `outlook:${item.calendarId ?? "default"}`;
+    return calendarSources.find((source) => source.id === sourceId)?.color
+      ?? (item.calendar === "Local" ? "#75d5e8" : item.calendar === "Gmail" ? "#f0b86e" : "#748ff7");
   };
 
   const renderItemChip = (item: DayboardItem, compact = false) => (
@@ -622,6 +901,7 @@ function App() {
       className={`task-pill ${toneClass[item.calendar]} ${item.state === "done" ? "is-done" : ""} ${
         draggingItemId === item.id ? "is-dragging" : ""
       }`}
+      style={{ "--calendar-color": getItemCalendarColor(item) } as React.CSSProperties}
       onClick={(event) => {
         event.stopPropagation();
         if (Date.now() < dragClickGuardUntil.current) {
@@ -705,8 +985,67 @@ function App() {
       style={{ "--panel-opacity": opacity / 100 } as React.CSSProperties}
     >
       <section
-        className={`widget-shell ${isGlanceOpen ? "widget-shell--drawer-open" : "widget-shell--drawer-closed"}`}
+        className={`widget-shell ${isCalendarPanelOpen ? "widget-shell--sources-open" : ""} ${
+          isGlanceOpen ? "widget-shell--drawer-open" : "widget-shell--drawer-closed"
+        }`}
       >
+        {isCalendarPanelOpen && (
+          <section className="panel panel--calendar-sources" id="calendar-sources-panel" aria-label="显示的日历">
+            <header className="source-panel-head">
+              <div>
+                <p className="section-title">日历来源</p>
+                <h2>显示日历</h2>
+              </div>
+              <button
+                className="icon-button"
+                type="button"
+                aria-label="立即同步日历"
+                disabled={syncing || !googleConnected}
+                onClick={() => void syncGoogleCalendars(true)}
+              >
+                <RefreshCw className={syncing ? "is-spinning" : ""} size={16} aria-hidden="true" />
+              </button>
+            </header>
+
+            <div className="calendar-source-groups">
+              {(["local", "google", "outlook"] as const).map((provider) => {
+                const sources = calendarSources.filter((source) => source.provider === provider);
+                if (!sources.length) return null;
+                return (
+                  <section className="calendar-source-group" key={provider}>
+                    <h3>{provider === "local" ? "本地" : provider === "google" ? "Google" : "Outlook"}</h3>
+                    {sources.map((source) => (
+                      <label className="calendar-source-option" key={source.id}>
+                        <input
+                          type="checkbox"
+                          checked={source.visible}
+                          onChange={(event) => {
+                            const visible = event.target.checked;
+                            setCalendarSources((current) => current.map((candidate) =>
+                              candidate.id === source.id ? { ...candidate, visible } : candidate));
+                          }}
+                        />
+                        <span
+                          className={`calendar-source-dot source-${source.provider === "google" ? "gmail" : source.provider}`}
+                          style={{ backgroundColor: source.color }}
+                        />
+                        <span className="calendar-source-copy">
+                          <strong>{source.name}</strong>
+                          <small>{source.primary ? "主日历" : source.accountLabel}</small>
+                        </span>
+                      </label>
+                    ))}
+                  </section>
+                );
+              })}
+            </div>
+
+            <p className="source-panel-note">
+              {googleConnected ? "启动、回到窗口及每 15 分钟自动同步。" : "连接 Google 后会列出账号下的全部日历。"}
+            </p>
+          </section>
+        )}
+
         <aside className="panel panel--calendar panel--calendar-focus">
           <div className="panel-topline panel-topline--calendar-focus">
             <div
@@ -730,6 +1069,27 @@ function App() {
             </div>
             <div className="panel-toolbar panel-toolbar--tight">
 
+              <button
+                className={`icon-button ${isCalendarPanelOpen ? "is-active" : ""}`}
+                type="button"
+                aria-expanded={isCalendarPanelOpen}
+                aria-controls="calendar-sources-panel"
+                aria-label={isCalendarPanelOpen ? "收起日历列表" : "选择显示的日历"}
+                onClick={() => setIsCalendarPanelOpen((current) => !current)}
+              >
+                <ListFilter size={18} aria-hidden="true" />
+              </button>
+              <button
+                className="today-button"
+                type="button"
+                onClick={() => {
+                  selectDate(todayKey, false);
+                  showNotice("已回到今天");
+                }}
+                aria-label="回到今天"
+              >
+                今天
+              </button>
               <button
                 className={`icon-button icon-button--glance ${isGlanceOpen ? "is-active" : ""}`}
                 type="button"
@@ -861,6 +1221,7 @@ function App() {
                     } ${item.state === "done" ? "event-card--done" : ""} ${toneClass[item.calendar]} ${
                       draggingItemId === item.id ? "is-dragging" : ""
                     }`}
+                    style={{ "--calendar-color": getItemCalendarColor(item) } as React.CSSProperties}
                     draggable
                     onDragStart={(event) => beginDragItem(event, item.id)}
                     onDragEnd={endDragItem}
@@ -879,7 +1240,7 @@ function App() {
                     <button type="button" className="event-card__content" onClick={() => openEdit(item)}>
                       <h3>{item.title}</h3>
                       <p className="event-meta">
-                        {item.calendar} · {item.kind === "event" ? "日程" : "任务"}
+                        {item.calendarLabel ?? item.calendar} · {item.kind === "event" ? "日程" : "任务"}
                         {item.note ? ` · ${item.note}` : ""}
                       </p>
                     </button>
@@ -963,7 +1324,17 @@ function App() {
                 <span>类型</span>
                 <select id="editor-kind"
                   value={editor.draft.kind}
-                  onChange={(event) => setDraftValue("kind", event.target.value as ItemKind)}
+                  onChange={(event) => {
+                    const kind = event.target.value as ItemKind;
+                    setEditor((current) => current && ({
+                      ...current,
+                      draft: {
+                        ...current.draft,
+                        kind,
+                        allDay: kind === "event" && !current.draft.start && !current.draft.end,
+                      },
+                    }));
+                  }}
                 >
                   <option value="task">任务</option>
                   <option value="event">日程</option>
@@ -971,12 +1342,38 @@ function App() {
               </label>
             </div>
 
+            {editor.draft.kind === "event" && (
+              <div className="all-day-row">
+                <div className="row-copy">
+                  <strong>全天</strong>
+                  <span>不填写开始和结束时间时，也会自动保存为全天日程。</span>
+                </div>
+                <button
+                  className={`toggle ${editor.draft.allDay ? "is-on" : ""}`}
+                  type="button"
+                  role="switch"
+                  aria-checked={Boolean(editor.draft.allDay)}
+                  aria-label="切换全天日程"
+                  onClick={() => setEditor((current) => current && ({
+                    ...current,
+                    draft: {
+                      ...current.draft,
+                      allDay: !current.draft.allDay,
+                      start: !current.draft.allDay ? "" : current.draft.start,
+                      end: !current.draft.allDay ? "" : current.draft.end,
+                    },
+                  }))}
+                />
+              </div>
+            )}
+
             <div className="form-grid">
               <label className="field" htmlFor="editor-start">
                 <span>开始</span>
                 <input id="editor-start"
                   type="time"
                   value={editor.draft.start}
+                  disabled={Boolean(editor.draft.allDay)}
                   onChange={(event) => setDraftValue("start", event.target.value)}
                 />
               </label>
@@ -985,6 +1382,7 @@ function App() {
                 <input id="editor-end"
                   type="time"
                   value={editor.draft.end}
+                  disabled={Boolean(editor.draft.allDay)}
                   onChange={(event) => setDraftValue("end", event.target.value)}
                 />
               </label>
@@ -994,12 +1392,18 @@ function App() {
               <label className="field" htmlFor="editor-calendar">
                 <span>日历</span>
                 <select id="editor-calendar"
-                  value={editor.draft.calendar}
-                  onChange={(event) => setDraftValue("calendar", event.target.value as CalendarName)}
+                  value={editor.draft.calendar === "Local"
+                    ? "local"
+                    : editor.draft.calendar === "Gmail"
+                      ? `google:${editor.draft.calendarId ?? primaryGoogleSource?.remoteId ?? "primary"}`
+                      : `outlook:${editor.draft.calendarId ?? "default"}`}
+                  onChange={(event) => setDraftCalendar(event.target.value)}
                 >
-                  <option value="Local">Local</option>
-                  <option value="Gmail">Gmail</option>
-                  <option value="Outlook">Outlook</option>
+                  {calendarSources.filter((source) => source.writable).map((source) => (
+                    <option value={source.id} key={source.id}>
+                      {source.provider === "local" ? source.name : `${source.name} · ${source.accountLabel}`}
+                    </option>
+                  ))}
                 </select>
               </label>
               <label className="field" htmlFor="editor-state">
@@ -1104,52 +1508,7 @@ function App() {
                       className="action-button action-button--primary"
                       type="button"
                       disabled={syncing}
-                      onClick={async () => {
-                        if (!googleConnected) { showNotice("请先连接 Google 日历再同步。"); return; }
-                        setSyncing(true);
-                        try {
-                          const events = await fetchCalendarEvents(
-                            (() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - 7); return d.toISOString(); })(),
-                            (() => { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() + 37); return d.toISOString(); })()
-                          );
-                          // Convert Google Calendar events to Dayboard items
-                          const imported: DayboardItem[] = events.map((evt) => {
-                            const dateStr = evt.start?.date
-                              ? evt.start.date
-                              : (evt.start?.dateTime
-                                ? evt.start.dateTime.slice(0, 10)
-                                : new Date().toISOString().slice(0, 10));
-                            const startTime = evt.start?.dateTime
-                              ? evt.start.dateTime.slice(11, 16)
-                              : "";
-                            const endTime = evt.end?.dateTime
-                              ? evt.end.dateTime.slice(11, 16)
-                              : "";
-                            return {
-                              id: "gcal-" + evt.id,
-                              title: evt.summary || "(无标题)",
-                              date: dateStr,
-                              start: evt.start?.date ? "" : startTime,
-                              end: evt.start?.date ? "" : endTime,
-                              kind: "event" as const,
-                              state: "open" as const,
-                              calendar: "Gmail" as const,
-                              note: evt.description ?? "",
-                            };
-                          });
-                          // Merge: replace any existing Google events with new ones,
-                          // keep local items unchanged
-                          setBoardItems((current) => {
-                            const localOnly = current.filter((i) => i.calendar !== "Gmail");
-                            return [...localOnly, ...imported];
-                          });
-                          showNotice("已同步 " + imported.length + " 个 Google 日历事件。");
-                        } catch (err) {
-                          showNotice("同步失败: " + (err as Error).message);
-                        } finally {
-                          setSyncing(false);
-                        }
-                      }}
+                      onClick={() => void syncGoogleCalendars(true)}
                     >
                       {syncing ? "Syncing..." : "同步"}
                     </button>
@@ -1162,8 +1521,8 @@ function App() {
                         <h3>Google 日历</h3>
                         <p>
                           {googleConnected
-                            ? "已连接你的 Google 账号，日历事件将同步到桌面贴片。"
-                            : "连接 Google 日历后，日程自动出现在贴片上。"}
+                            ? `已连接并发现 ${calendarSources.filter((source) => source.provider === "google").length} 个日历，贴片会自动同步。`
+                            : "连接 Google 日历后，账号下的日历会自动出现在贴片上。"}
                         </p>
                         <div className="account-meta">
                           <span className="meta-pill">Calendar</span>
@@ -1276,14 +1635,8 @@ function App() {
                     <button
                       className="action-button"
                       type="button"
-                      onClick={() => {
-                        setRetryMessage("正在重新同步...");
-                        showNotice("正在重试同步。");
-                        window.setTimeout(() => {
-                          setRetryMessage("同步队列已更新。");
-                          showNotice("同步已进入队列。");
-                        }, 800);
-                      }}
+                      disabled={syncing}
+                      onClick={() => void syncGoogleCalendars(true)}
                     >
                       重试
                     </button>

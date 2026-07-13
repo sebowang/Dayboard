@@ -14,12 +14,16 @@ import {
   X,
 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { open } from "@tauri-apps/plugin-shell";
 import { DragEvent, FormEvent, PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type AppSettings, type CalendarName, type CalendarSource, type DayboardItem, type DraftItem, type EffectiveTheme, type ItemKind, type PinMode, type TaskState, type ThemeMode, type WidgetMode, defaultSettings, loadCalendarSources, loadItems, loadSettings, localCalendarSource, resetToSeedItems, saveCalendarSources, saveItems, saveSettings } from "./storage";
 
-import { getAuthUrl, handleAuthCallback, isGoogleConnected, disconnectGoogle, fetchCalendarEvents, listCalendars, readOauthLog, createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleEvent, moveGoogleEvent } from "./sync/google";
+import { getAuthUrl, handleAuthCallback, isGoogleConnected, disconnectGoogle, fetchCalendarEvents, listCalendars, createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleEvent, moveGoogleEvent } from "./sync/google";
 import { clearReminderDeliveries, getDueReminders, loadReminderDeliveries, saveReminderDeliveries, type ReminderDelivery } from "./reminders";
+import { isTauriRuntime } from "./tauri-runtime";
 type EditorState =
   | { mode: "create"; draft: DraftItem }
   | { mode: "edit"; id: string; draft: DraftItem }
@@ -211,9 +215,8 @@ function App() {
   const [autoStart, setAutoStart] = useState(initialSettings.autoStart);
   const [mousePassthrough, setMousePassthrough] = useState(initialSettings.mousePassthrough);
   const [syncing, setSyncing] = useState(false);
-  const [googleConnected, setGoogleConnected] = useState(() => isGoogleConnected());
+  const [googleConnected, setGoogleConnected] = useState(false);
   const [googleConnecting, setGoogleConnecting] = useState(false);
-  const [lastOauthLog, setLastOauthLog] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [toast, setToast] = useState("");
   const toastTimer = useRef<number | null>(null);
@@ -225,6 +228,7 @@ function App() {
   const [updateState, setUpdateState] = useState<UpdateState>({ kind: "idle" });
   const dragClickGuardUntil = useRef(0);
   const pointerDrag = useRef<PointerDragState | null>(null);
+  const oauthHandled = useRef(false);
   const syncInFlight = useRef(false);
   const lastSyncAt = useRef(0);
   const reminderDeliveries = useRef<ReminderDelivery>(loadReminderDeliveries());
@@ -304,7 +308,7 @@ function App() {
   }, []);
 
   const syncGoogleCalendars = useCallback(async (announce = false) => {
-    if (!isGoogleConnected()) {
+    if (!googleConnected) {
       if (announce) showNotice("请先连接 Google 日历再同步。");
       return;
     }
@@ -396,7 +400,7 @@ function App() {
       syncInFlight.current = false;
       setSyncing(false);
     }
-  }, [showNotice]);
+  }, [googleConnected, showNotice]);
 
   useEffect(() => {
     saveItems(boardItems);
@@ -502,54 +506,52 @@ function App() {
     return () => media?.removeEventListener("change", syncTheme);
   }, [themeMode]);
 
-  // Handle OAuth callback on page load.
-  const oauthHandled = useRef(false);
-  useEffect(() => {
-    const url = window.location.href;
-    console.log("[Dayboard::App] mount, url:", url.substring(0, 100));
+  const completeGoogleAuthCallback = useCallback(async (url: string) => {
+    if (oauthHandled.current) return;
+    oauthHandled.current = true;
 
-    if (url.includes("oauth/google/callback") && !oauthHandled.current) {
-      oauthHandled.current = true;
-      console.log("[Dayboard::App] OAuth callback detected");
-
+    try {
       const parsed = new URL(url);
       const error = parsed.searchParams.get("error");
       const code = parsed.searchParams.get("code");
+      if (error) throw new Error(`Google 返回授权错误：${error}`);
+      if (!code) throw new Error("授权回调缺少 code 参数。");
 
-      console.log("[Dayboard::App] error param:", error, "code present:", !!code);
-
-      if (error) {
-        const msg = "Google returned error: " + error;
-        console.error("[Dayboard::App]", msg);
-        setLastOauthLog(msg);
-        showNotice("Google " + msg);
-        window.history.replaceState({}, "", "/");
-        return;
-      }
-      if (!code) {
-        console.error("[Dayboard::App] No code in callback URL");
-        setLastOauthLog("No authorization code in callback URL");
-        return;
-      }
-
-      // Process OAuth callback (Strict Mode double-run guarded by oauthHandled ref)
-
-      handleAuthCallback(url)
-        .then(() => {
-          console.log("[Dayboard::App] handleAuthCallback SUCCESS");
-          window.history.replaceState({}, "", "/");
-          setGoogleConnected(true);
-          setLastOauthLog("Success at " + new Date().toLocaleTimeString());
-          showNotice("Google 日历已连接。");
-        })
-        .catch((err: unknown) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          console.error("[Dayboard::App] handleAuthCallback FAILED:", msg);
-          setLastOauthLog("FAILED: " + msg);
-          showNotice("授权失败: " + msg);
-        });
+      await handleAuthCallback(url);
+      setGoogleConnected(true);
+      showNotice("Google 日历已连接。");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      showNotice("授权失败：" + message);
+    } finally {
+      setGoogleConnecting(false);
     }
-  }, []);
+  }, [showNotice]);
+
+  useEffect(() => {
+    void isGoogleConnected().then(setGoogleConnected).catch(() => setGoogleConnected(false));
+    const currentUrl = window.location.href;
+    if (currentUrl.includes("oauth/google/callback")) void completeGoogleAuthCallback(currentUrl);
+
+    let unlisten: (() => void) | undefined;
+    if (isTauriRuntime()) {
+      void listen<string>("google-oauth-callback", (event) => {
+        void completeGoogleAuthCallback(event.payload);
+      }).then((stopListening) => { unlisten = stopListening; });
+    }
+    return () => unlisten?.();
+  }, [completeGoogleAuthCallback]);
+
+  useEffect(() => {
+    if (!googleConnecting) return;
+    const timeout = window.setTimeout(() => {
+      oauthHandled.current = true;
+      if (isTauriRuntime()) void invoke("cancel_google_oauth_listener").catch(() => undefined);
+      setGoogleConnecting(false);
+      showNotice("Google 授权超时，已恢复为可重新连接状态。");
+    }, 5 * 60 * 1000);
+    return () => window.clearTimeout(timeout);
+  }, [googleConnecting, showNotice]);
 
   const setDraftValue = <Key extends keyof DraftItem>(key: Key, value: DraftItem[Key]) => {
     setEditor((current) => {
@@ -938,8 +940,7 @@ function App() {
     setCalendarSources([localCalendarSource]);
     setIsCalendarPanelOpen(false);
     setGoogleConnected(false);
-    setLastOauthLog("");
-    disconnectGoogle();
+    void disconnectGoogle();
     setSelectedDate(todayKey);
     setCurrentMonth(parseDateKey(todayKey));
     showNotice("已恢复示例数据，已断开 Google 连接");
@@ -952,20 +953,30 @@ function App() {
 
   const connectGoogle = async () => {
     setGoogleConnecting(true);
+    oauthHandled.current = false;
     try {
+      if (isTauriRuntime()) await invoke("start_google_oauth_listener");
       const authUrl = await getAuthUrl();
-      // Navigate the app window to Google OAuth.
-      // Google redirects back to 127.0.0.1:1420/oauth/google/callback
-      // which the mount-time useEffect will handle in the same webview session.
-      window.location.href = authUrl;
+      if (isTauriRuntime()) {
+        await open(authUrl);
+      } else {
+        window.location.href = authUrl;
+      }
     } catch (err) {
       showNotice("无法启动 Google 授权: " + (err as Error).message);
       setGoogleConnecting(false);
     }
   };
 
+  const cancelGoogleConnection = () => {
+    oauthHandled.current = true;
+    if (isTauriRuntime()) void invoke("cancel_google_oauth_listener").catch(() => undefined);
+    setGoogleConnecting(false);
+    showNotice("已取消 Google 授权，可重新连接。");
+  };
+
   const disconnectGoogleAccount = () => {
-    disconnectGoogle();
+    void disconnectGoogle();
     setGoogleConnected(false);
     setCalendarSources((current) => current.filter((source) => source.provider !== "google"));
     setBoardItems((current) => current.filter((item) => item.calendar !== "Gmail"));
@@ -1010,7 +1021,7 @@ function App() {
       onPointerCancel={cancelPointerDragItem}
       title={item.title}
     >
-      {!compact && <span>{item.start || (item.kind === "task" ? "TASK" : "全天")}</span>}
+      {!compact && (item.start || item.kind === "task") && <span>{item.start || "TASK"}</span>}
       {item.title}
     </button>
   );
@@ -1376,7 +1387,9 @@ function App() {
           }}
           aria-hidden="true"
         >
-          <span>{dragPreview.item.start || (dragPreview.item.kind === "task" ? "TASK" : "全天")}</span>
+          {(dragPreview.item.start || dragPreview.item.kind === "task") && (
+            <span>{dragPreview.item.start || "TASK"}</span>
+          )}
           <strong>{dragPreview.item.title}</strong>
         </div>
       )}
@@ -1440,7 +1453,6 @@ function App() {
               <div className="all-day-row">
                 <div className="row-copy">
                   <strong>全天</strong>
-                  <span>不填写开始和结束时间时，也会自动保存为全天日程。</span>
                 </div>
                 <button
                   className={`toggle ${editor.draft.allDay ? "is-on" : ""}`}
@@ -1659,14 +1671,14 @@ function App() {
                           </button>
                         </div>
                       ) : (
-                        <button
-                          className="action-button"
-                          type="button"
-                          disabled={googleConnecting}
-                          onClick={connectGoogle}
-                        >
-                          {googleConnecting ? "跳转中..." : "连接"}
-                        </button>
+                        googleConnecting ? (
+                          <div className="account-actions">
+                            <span className="status-chip status-chip--warning"><i />等待浏览器授权</span>
+                            <button className="secondary-action" type="button" onClick={cancelGoogleConnection}>取消</button>
+                          </div>
+                        ) : (
+                          <button className="action-button" type="button" onClick={connectGoogle}>连接</button>
+                        )
                       )}
                     </article>
 
@@ -1709,16 +1721,6 @@ function App() {
                     </article>
                   </div>
 
-                  {lastOauthLog ? (
-                    <section className="setting-card">
-                      <h3>OAuth 诊断</h3>
-                      <p style={{fontFamily:"monospace",fontSize:"12px",whiteSpace:"pre-wrap",wordBreak:"break-all"}}>
-                        {lastOauthLog}
-                      </p>
-                      <p>token set in localStorage: {String(isGoogleConnected())}</p>
-                      <pre style={{fontSize:"10px",maxHeight:"200px",overflow:"auto",background:"rgba(255,255,255,0.05)",padding:"8px",borderRadius:"4px"}}>{readOauthLog() || "(no log yet)"}</pre>
-                    </section>
-                  ) : null}
                   <section className="setting-card">
                     <h3>同步范围</h3>
                     <p>这些开关决定贴片可读取哪些内容。</p>

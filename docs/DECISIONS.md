@@ -206,3 +206,18 @@
 - 提醒配置和已发送记录仅保存在本地，不写入 Google Calendar 远端事件。
 - 设置页通过 GitHub Releases API 检查新版本；仓库无发布版本时应明确显示该状态。
 - 安装包内自动下载、签名验证和安装更新需在未来配置受控发布渠道后再接入。
+
+## D016：发布版 Google OAuth 使用 loopback 回调与系统凭据存储
+
+状态：已接受
+
+依据：开发服务器回调地址不能在其他电脑的安装包中工作，WebView 的 localStorage 也不适合长期保存 refresh token。
+
+影响：
+
+- 发布版通过系统浏览器发起授权，并在 `127.0.0.1:1421` 临时监听 Google 授权回调。当前客户端类型为 Google OAuth "桌面设备"，因此 Google Cloud Console 不提供也不需要配置“已获授权的重定向 URI”。
+- 回调仅绑定 loopback 地址、只接受一次请求并在 5 分钟后超时；state 与 PKCE verifier 继续由应用校验。
+- 授权等待状态必须提供取消操作；取消或 5 分钟未回调时释放本机监听并恢复为可重新连接状态。
+- 桌面运行环境以 Tauri 注入的 `__TAURI_INTERNALS__` 判断，不依赖默认关闭的 `window.isTauri` 全局标记；否则会退化为浏览器回调且不会启动本机监听。
+- access token 与 refresh token 保存在 Windows Credential Manager；检测到旧 localStorage token 时仅迁移一次并删除旧值。
+- 测试期仍可保留当前 OAuth client secret 配置，但其不能作为对外发布时的保密方案。

@@ -1119,6 +1119,26 @@ button.status-pill:focus-visible {
   resize: vertical;
 }
 
+.field select {
+  color-scheme: dark;
+}
+
+.field select option,
+.field select optgroup {
+  color: oklch(95% 0.01 240);
+  background: oklch(25% 0.02 252);
+}
+
+.theme-light .field select {
+  color-scheme: light;
+}
+
+.theme-light .field select option,
+.theme-light .field select optgroup {
+  color: oklch(22% 0.018 250);
+  background: oklch(99% 0.004 240);
+}
+
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
@@ -1134,7 +1154,7 @@ button.status-pill:focus-visible {
 
 .all-day-row {
   display: flex;
-  min-height: 48px;
+  min-height: 40px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;

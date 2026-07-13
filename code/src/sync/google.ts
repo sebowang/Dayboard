@@ -2,6 +2,9 @@
 // OAuth 2.0 with PKCE (S256). code_verifier is stored in sessionStorage
 // keyed by a random stateId; only the stateId goes into the OAuth URL.
 
+import { invoke } from "@tauri-apps/api/core";
+import { isTauriRuntime } from "../tauri-runtime";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -38,7 +41,7 @@ interface TokenSet {
 export const GOOGLE_AUTH_CONFIG = {
   clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID || "",
   clientSecret: import.meta.env.VITE_GOOGLE_CLIENT_SECRET || "",
-  redirectUri: "http://127.0.0.1:1420/oauth/google/callback",
+  redirectUri: "http://127.0.0.1:1421/oauth/google/callback",
   scopes: [
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
@@ -128,16 +131,56 @@ function base64UrlEncode(buffer: Uint8Array): string {
 // Token management
 // ---------------------------------------------------------------------------
 
-function readTokenSet(): TokenSet | null {
+let cachedTokenSet: TokenSet | null | undefined;
+
+async function readTokenSet(): Promise<TokenSet | null> {
+  if (cachedTokenSet !== undefined) return cachedTokenSet;
+  if (isTauriRuntime()) {
+    const stored = await invoke<string | null>("load_google_tokens");
+    if (stored) {
+      try {
+        cachedTokenSet = JSON.parse(stored) as TokenSet;
+        return cachedTokenSet;
+      } catch {
+        cachedTokenSet = null;
+        return null;
+      }
+    }
+    // One-time migration for tokens created by earlier Dayboard builds.
+    const legacy = lsGet("token_set");
+    if (legacy) {
+      try {
+        const tokens = JSON.parse(legacy) as TokenSet;
+        await invoke("store_google_tokens", { tokens: JSON.stringify(tokens) });
+        lsRemove("token_set");
+        cachedTokenSet = tokens;
+        return tokens;
+      } catch {
+        // Invalid legacy data must not be copied into native storage.
+      }
+    }
+    cachedTokenSet = null;
+    return null;
+  }
   const raw = lsGet("token_set");
-  if (!raw) return null;
-  try { return JSON.parse(raw) as TokenSet; } catch { return null; }
+  cachedTokenSet = raw ? JSON.parse(raw) as TokenSet : null;
+  return cachedTokenSet;
 }
-function saveTokenSet(tokens: TokenSet): void {
-  lsSet("token_set", JSON.stringify(tokens));
+async function saveTokenSet(tokens: TokenSet): Promise<void> {
+  if (isTauriRuntime()) {
+    await invoke("store_google_tokens", { tokens: JSON.stringify(tokens) });
+  } else {
+    lsSet("token_set", JSON.stringify(tokens));
+  }
+  cachedTokenSet = tokens;
 }
-function clearTokenSet(): void {
-  lsRemove("token_set");
+async function clearTokenSet(): Promise<void> {
+  if (isTauriRuntime()) {
+    await invoke("clear_google_tokens");
+  } else {
+    lsRemove("token_set");
+  }
+  cachedTokenSet = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,7 +216,7 @@ export async function getAuthUrl(): Promise<string> {
 }
 
 export async function handleAuthCallback(url: string): Promise<void> {
-  oauthLog("handleAuthCallback START, url=" + url.substring(0, 150));
+  oauthLog("handleAuthCallback START");
 
   const parsed = new URL(url);
   const error = parsed.searchParams.get("error");
@@ -230,7 +273,7 @@ export async function handleAuthCallback(url: string): Promise<void> {
   const data = await response.json();
   oauthLog("handleAuthCallback: TOKEN OK, has_access_token=" + !!data.access_token + ", has_refresh=" + !!data.refresh_token);
 
-  saveTokenSet({
+  await saveTokenSet({
     access_token: data.access_token,
     refresh_token: data.refresh_token,
     expires_at: Date.now() + (data.expires_in ?? 3600) * 1000,
@@ -241,11 +284,11 @@ export async function handleAuthCallback(url: string): Promise<void> {
 let _refreshPromise: Promise<TokenSet> | null = null;
 
 export async function getValidToken(): Promise<string | null> {
-  const tokens = readTokenSet();
+  const tokens = await readTokenSet();
   if (!tokens) return null;
   if (tokens.expires_at > Date.now() + 60_000) return tokens.access_token;
   if (!tokens.refresh_token) {
-    clearTokenSet();
+    await clearTokenSet();
     throw new GoogleSyncError("NO_REFRESH_TOKEN", "No refresh token — re-authenticate.");
   }
   // Deduplicate concurrent refresh attempts
@@ -264,7 +307,7 @@ export async function getValidToken(): Promise<string | null> {
       if (!response.ok) {
         // Clear tokens on auth errors; 429 (rate limit) keeps tokens for retry.
         if (response.status === 400 || response.status === 401 || response.status === 403) {
-          clearTokenSet();
+          await clearTokenSet();
         }
         const text = await response.text();
         _refreshPromise = null;
@@ -276,7 +319,7 @@ export async function getValidToken(): Promise<string | null> {
         refresh_token: data.refresh_token ?? tokens.refresh_token,
         expires_at: Date.now() + (data.expires_in ?? 3600) * 1000,
       };
-      saveTokenSet(updated);
+      await saveTokenSet(updated);
       oauthLog("getValidToken: refreshed, expires_at=" + updated.expires_at);
       return updated;
     })();
@@ -484,5 +527,8 @@ export async function listCalendars(): Promise<CalendarEntry[]> {
   }));
 }
 
-export function isGoogleConnected(): boolean { return readTokenSet() !== null; }
-export function disconnectGoogle(): void { clearTokenSet(); oauthLog("disconnectGoogle: tokens cleared"); }
+export async function isGoogleConnected(): Promise<boolean> { return (await readTokenSet()) !== null; }
+export async function disconnectGoogle(): Promise<void> {
+  await clearTokenSet();
+  oauthLog("disconnectGoogle: tokens cleared");
+}

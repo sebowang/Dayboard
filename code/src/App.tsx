@@ -18,6 +18,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { open } from "@tauri-apps/plugin-shell";
+import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from "@tauri-apps/plugin-autostart";
 import { DragEvent, FormEvent, PointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type AppSettings, type CalendarName, type CalendarSource, type DayboardItem, type DraftItem, type EffectiveTheme, type ItemKind, type PinMode, type TaskState, type ThemeMode, type WidgetMode, defaultSettings, loadCalendarSources, loadItems, loadSettings, localCalendarSource, resetToSeedItems, saveCalendarSources, saveItems, saveSettings } from "./storage";
 
@@ -31,6 +32,8 @@ type EditorState =
 type DragPayload = {
   itemId: string;
 };
+
+const GOOGLE_SYNC_INTERVAL_MS = 60_000;
 
 type PointerDragState = {
   itemId: string;
@@ -230,7 +233,6 @@ function App() {
   const pointerDrag = useRef<PointerDragState | null>(null);
   const oauthHandled = useRef(false);
   const syncInFlight = useRef(false);
-  const lastSyncAt = useRef(0);
   const reminderDeliveries = useRef<ReminderDelivery>(loadReminderDeliveries());
 
   const monthDates = useMemo(() => getMonthDates(currentMonth), [currentMonth]);
@@ -390,7 +392,6 @@ function App() {
       ]);
       setGoogleConnected(true);
       setRetryMessage("");
-      lastSyncAt.current = Date.now();
       if (announce) showNotice(`已同步 ${calendars.length} 个日历、${imported.length} 条日程。`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -460,12 +461,15 @@ function App() {
   }, [pinMode, desktopLocked]);
 
   useEffect(() => {
+    if (!isTauriRuntime()) return;
+    void isAutostartEnabled().then(setAutoStart).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
     if (!googleConnected) return;
     void syncGoogleCalendars(false);
-    const interval = window.setInterval(() => void syncGoogleCalendars(false), 15 * 60 * 1000);
-    const syncOnFocus = () => {
-      if (Date.now() - lastSyncAt.current >= 5 * 60 * 1000) void syncGoogleCalendars(false);
-    };
+    const interval = window.setInterval(() => void syncGoogleCalendars(false), GOOGLE_SYNC_INTERVAL_MS);
+    const syncOnFocus = () => void syncGoogleCalendars(false);
     window.addEventListener("focus", syncOnFocus);
     return () => {
       window.clearInterval(interval);
@@ -529,7 +533,10 @@ function App() {
   }, [showNotice]);
 
   useEffect(() => {
-    void isGoogleConnected().then(setGoogleConnected).catch(() => setGoogleConnected(false));
+    void isGoogleConnected().then(setGoogleConnected).catch(() => {
+      setGoogleConnected(false);
+      showNotice("无法读取已保存的 Google 授权，请重新连接。" );
+    });
     const currentUrl = window.location.href;
     if (currentUrl.includes("oauth/google/callback")) void completeGoogleAuthCallback(currentUrl);
 
@@ -973,6 +980,22 @@ function App() {
     if (isTauriRuntime()) void invoke("cancel_google_oauth_listener").catch(() => undefined);
     setGoogleConnecting(false);
     showNotice("已取消 Google 授权，可重新连接。");
+  };
+
+  const toggleAutoStart = async () => {
+    const next = !autoStart;
+    try {
+      if (isTauriRuntime()) {
+        if (next) await enableAutostart();
+        else await disableAutostart();
+        setAutoStart(await isAutostartEnabled());
+      } else {
+        setAutoStart(next);
+      }
+      showNotice(next ? "已设置为登录 Windows 后自动启动。" : "已关闭开机启动。");
+    } catch (error) {
+      showNotice("无法更新开机启动：" + (error instanceof Error ? error.message : String(error)));
+    }
   };
 
   const disconnectGoogleAccount = () => {
@@ -1815,16 +1838,13 @@ function App() {
                       />
                     </div>
                     <div className="settings-row">
-                      <div className="row-copy"><strong>开机启动</strong><span>进入 Windows 后自动恢复上次位置。</span></div>
+                      <div className="row-copy"><strong>开机启动</strong><span>登录 Windows 后自动启动 Dayboard。</span></div>
                       <button
                         className={`toggle ${autoStart ? "is-on" : ""}`}
                         type="button"
                         aria-pressed={autoStart}
                         aria-label="切换开机启动"
-                        onClick={() => {
-                          setAutoStart((current) => !current);
-                          showNotice("开机启动只是界面状态，后续会接 Tauri autostart 插件。");
-                        }}
+                        onClick={() => void toggleAutoStart()}
                       />
                     </div>
                     <div className="settings-row">

@@ -22,14 +22,21 @@ fn google_token_entry() -> Result<keyring::Entry, String> {
 
 #[tauri::command]
 fn store_google_tokens(tokens: String) -> Result<(), String> {
-    google_token_entry()?.set_password(&tokens).map_err(|error| error.to_string())
+    let entry = google_token_entry()?;
+    entry.set_password(&tokens).map_err(|error| error.to_string())?;
+    let stored = entry.get_password().map_err(|error| error.to_string())?;
+    if stored != tokens {
+        return Err("Google 授权凭据保存校验失败。".to_string());
+    }
+    Ok(())
 }
 
 #[tauri::command]
 fn load_google_tokens() -> Result<Option<String>, String> {
     match google_token_entry()?.get_password() {
         Ok(tokens) => Ok(Some(tokens)),
-        Err(_) => Ok(None),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(error) => Err(error.to_string()),
     }
 }
 
@@ -104,6 +111,7 @@ fn write_callback_response(stream: &mut TcpStream) -> std::io::Result<()> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(tauri_plugin_autostart::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_notification::init())
         .invoke_handler(tauri::generate_handler![

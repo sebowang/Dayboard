@@ -11,6 +11,7 @@
     "core:window:allow-set-skip-taskbar",
     "core:window:allow-start-dragging",
     "window-state:default",
+    "autostart:default",
     "notification:default",
     "shell:allow-open"
   ]

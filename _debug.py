@@ -1,0 +1,1 @@
+f=open('code/src/App.tsx','r',encoding='utf-8'); a=f.read(); f.close(); idx=a.find('resetLocalData'); sub=a[idx:idx+1800]; import re; m=re.search(r'showNotice\(.+?\)', sub); print(m.group() if m else 'NOT FOUND')

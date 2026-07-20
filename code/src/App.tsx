@@ -23,6 +23,7 @@ import { DragEvent, FormEvent, PointerEvent, useCallback, useEffect, useMemo, us
 import { type AppSettings, type CalendarName, type CalendarSource, type DayboardItem, type DraftItem, type EffectiveTheme, type ItemKind, type PinMode, type TaskState, type ThemeMode, type WidgetMode, defaultSettings, loadCalendarSources, loadItems, loadSettings, localCalendarSource, resetToSeedItems, saveCalendarSources, saveItems, saveSettings } from "./storage";
 
 import { getAuthUrl, handleAuthCallback, isGoogleConnected, disconnectGoogle, fetchCalendarEvents, listCalendars, createGoogleEvent, updateGoogleEvent, deleteGoogleEvent, getGoogleEvent, moveGoogleEvent } from "./sync/google";
+import { applyCalendarSource, getCalendarSourceId, getPreferredCalendarSource, rescheduleItem } from "./calendar-actions";
 import { clearReminderDeliveries, getDueReminders, loadReminderDeliveries, saveReminderDeliveries, type ReminderDelivery } from "./reminders";
 import { isTauriRuntime } from "./tauri-runtime";
 type EditorState =
@@ -61,7 +62,7 @@ type UpdateState =
 
 
 const weekdays = ["一", "二", "三", "四", "五", "六", "日"];
-const APP_VERSION = "0.1.0";
+const APP_VERSION = "0.1.3";
 const UPDATE_API_URL = "https://api.github.com/repos/sebowang/Dayboard/releases/latest";
 
 const toneClass: Record<CalendarName, string> = {
@@ -217,6 +218,7 @@ function App() {
   const [desktopLocked, setDesktopLocked] = useState(initialSettings.desktopLocked);
   const [autoStart, setAutoStart] = useState(initialSettings.autoStart);
   const [mousePassthrough, setMousePassthrough] = useState(initialSettings.mousePassthrough);
+  const [defaultCalendarSourceId, setDefaultCalendarSourceId] = useState(initialSettings.defaultCalendarSourceId);
   const [syncing, setSyncing] = useState(false);
   const [googleConnected, setGoogleConnected] = useState(false);
   const [googleConnecting, setGoogleConnecting] = useState(false);
@@ -233,6 +235,8 @@ function App() {
   const pointerDrag = useRef<PointerDragState | null>(null);
   const oauthHandled = useRef(false);
   const syncInFlight = useRef(false);
+  const googleWriteGeneration = useRef(0);
+  const googleWriteInFlight = useRef(false);
   const reminderDeliveries = useRef<ReminderDelivery>(loadReminderDeliveries());
 
   const monthDates = useMemo(() => getMonthDates(currentMonth), [currentMonth]);
@@ -314,9 +318,10 @@ function App() {
       if (announce) showNotice("请先连接 Google 日历再同步。");
       return;
     }
-    if (syncInFlight.current) return;
+    if (syncInFlight.current || googleWriteInFlight.current) return;
 
     syncInFlight.current = true;
+    const syncGeneration = googleWriteGeneration.current;
     setSyncing(true);
     try {
       const calendars = await listCalendars();
@@ -356,6 +361,7 @@ function App() {
         rangeEnd.toISOString(),
         calendars.map((calendar) => calendar.id),
       );
+      if (syncGeneration !== googleWriteGeneration.current) return;
       const calendarNames = new Map(calendars.map((calendar) => [calendar.id, calendar.summary]));
       const calendarColors = new Map(calendars.map((calendar) => [
         calendar.id,
@@ -452,9 +458,10 @@ function App() {
       desktopLocked,
       autoStart,
       mousePassthrough,
+      defaultCalendarSourceId,
       syncOptions,
     });
-  }, [widgetMode, isGlanceOpen, opacity, pinMode, themeMode, desktopLocked, autoStart, mousePassthrough, syncOptions]);
+  }, [widgetMode, isGlanceOpen, opacity, pinMode, themeMode, desktopLocked, autoStart, mousePassthrough, defaultCalendarSourceId, syncOptions]);
 
   useEffect(() => {
     void applyWindowBehavior(pinMode, desktopLocked);
@@ -579,13 +586,7 @@ function App() {
       if (!current) return current;
       return {
         ...current,
-        draft: {
-          ...current.draft,
-          calendar: source.provider === "google" ? "Gmail" : source.provider === "outlook" ? "Outlook" : "Local",
-          calendarId: source.remoteId ?? source.id,
-          calendarLabel: source.name,
-          calendarColor: source.color,
-        },
+        draft: applyCalendarSource(current.draft, source),
       };
     });
   };
@@ -598,7 +599,11 @@ function App() {
 
   const openCreate = (date = selectedDate) => {
     selectDate(date, false);
-    setEditor({ mode: "create", draft: emptyDraft(date) });
+    const source = getPreferredCalendarSource(calendarSources, defaultCalendarSourceId);
+    setEditor({
+      mode: "create",
+      draft: source ? applyCalendarSource(emptyDraft(date), source) : emptyDraft(date),
+    });
   };
 
   const openEdit = (item: DayboardItem) => {
@@ -764,6 +769,8 @@ function App() {
       selectDate(draft.date, false);
     }
 
+    const usedCalendarSourceId = getCalendarSourceId(draft, calendarSources);
+    if (usedCalendarSourceId) setDefaultCalendarSourceId(usedCalendarSourceId);
     setEditor(null);
   };
 
@@ -811,16 +818,32 @@ function App() {
     selectDate(nextDate, false);
   };
 
-  const moveItemToDate = (itemId: string, nextDate: string) => {
-    setBoardItems((current) =>
-      current.map((item) => (item.id === itemId ? { ...item, date: nextDate } : item)),
-    );
-    // Don't jump the view in month mode — just update items.
-    // In week/fortnight mode the user is focused on a narrow window so we follow.
-    if (widgetMode === "week" || widgetMode === "fortnight") {
-      selectDate(nextDate, false);
-    } else {
-      setSelectedDate(nextDate);
+  const moveItemToDate = async (itemId: string, nextDate: string) => {
+    const item = boardItems.find((candidate) => candidate.id === itemId);
+    if (!item || item.date === nextDate) return;
+
+    const writesGoogle = item.calendar === "Gmail";
+    if (writesGoogle) {
+      googleWriteGeneration.current += 1;
+      googleWriteInFlight.current = true;
+    }
+    try {
+      const updatedItem = await rescheduleItem(item, nextDate);
+      setBoardItems((current) => current.map((candidate) => (
+        candidate.id === itemId ? updatedItem : candidate
+      )));
+      // Don't jump the view in month mode — just update items.
+      // In week/fortnight mode the user is focused on a narrow window so we follow.
+      if (widgetMode === "week" || widgetMode === "fortnight") {
+        selectDate(nextDate, false);
+      } else {
+        setSelectedDate(nextDate);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      showNotice(writesGoogle ? `无法移动 Google 日程：${message}` : `无法移动日程：${message}`);
+    } finally {
+      if (writesGoogle) googleWriteInFlight.current = false;
     }
   };
 
@@ -850,7 +873,7 @@ function App() {
     const raw = event.dataTransfer.getData("application/dayboard-item");
     try {
       const payload = JSON.parse(raw) as DragPayload;
-      if (payload.itemId) moveItemToDate(payload.itemId, dateKey);
+      if (payload.itemId) void moveItemToDate(payload.itemId, dateKey);
     } catch {
       // Ignore drag payloads from outside Dayboard.
     }
@@ -911,7 +934,7 @@ function App() {
     if (state.active) {
       event.preventDefault();
       const targetDate = getDateKeyFromPoint(event.clientX, event.clientY) ?? dropTargetDate;
-      if (targetDate) moveItemToDate(state.itemId, targetDate);
+      if (targetDate) void moveItemToDate(state.itemId, targetDate);
       dragClickGuardUntil.current = Date.now() + 300;
     }
 
@@ -943,6 +966,7 @@ function App() {
     setDesktopLocked(defaultSettings.desktopLocked);
     setAutoStart(defaultSettings.autoStart);
     setMousePassthrough(defaultSettings.mousePassthrough);
+    setDefaultCalendarSourceId(defaultSettings.defaultCalendarSourceId);
     setSyncOptions(defaultSettings.syncOptions);
     setCalendarSources([localCalendarSource]);
     setIsCalendarPanelOpen(false);
@@ -1002,6 +1026,7 @@ function App() {
     void disconnectGoogle();
     setGoogleConnected(false);
     setCalendarSources((current) => current.filter((source) => source.provider !== "google"));
+    setDefaultCalendarSourceId((current) => current?.startsWith("google:") ? undefined : current);
     setBoardItems((current) => current.filter((item) => item.calendar !== "Gmail"));
     showNotice("Google 日历已断开。");
   };

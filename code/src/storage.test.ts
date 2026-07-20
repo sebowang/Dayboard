@@ -111,6 +111,12 @@ describe("loadSettings", () => {
     expect(loaded.widgetMode).toBe("month"); // still default
   });
 
+  it("restores the last used calendar source for new events", () => {
+    saveSettings({ ...defaultSettings, defaultCalendarSourceId: "google:work@example.com" });
+
+    expect(loadSettings().defaultCalendarSourceId).toBe("google:work@example.com");
+  });
+
   it("normalizes unknown widgetMode", () => {
     store.set(STORAGE_KEYS.settings, JSON.stringify({ widgetMode: "biweek" }));
     expect(loadSettings().widgetMode).toBe("month"); // unknown → default

@@ -54,6 +54,7 @@ export type AppSettings = {
   desktopLocked: boolean;
   autoStart: boolean;
   mousePassthrough: boolean;
+  defaultCalendarSourceId?: string;
   syncOptions: SyncOptions;
 };
 
@@ -82,6 +83,7 @@ export const defaultSettings: AppSettings = {
   desktopLocked: false,
   autoStart: false,
   mousePassthrough: false,
+  defaultCalendarSourceId: undefined,
   syncOptions: { calendar: true, tasks: true, mailEvents: false },
 };
 
@@ -234,6 +236,9 @@ export const loadSettings = (): AppSettings => {
       desktopLocked: Boolean(parsed.desktopLocked ?? defaultSettings.desktopLocked),
       autoStart: Boolean(parsed.autoStart ?? defaultSettings.autoStart),
       mousePassthrough: Boolean(parsed.mousePassthrough ?? defaultSettings.mousePassthrough),
+      defaultCalendarSourceId: typeof parsed.defaultCalendarSourceId === "string"
+        ? parsed.defaultCalendarSourceId
+        : defaultSettings.defaultCalendarSourceId,
       syncOptions: parsed.syncOptions && typeof parsed.syncOptions === "object"
         ? {
             calendar: Boolean((parsed.syncOptions as Record<string,unknown>).calendar ?? true),

@@ -273,12 +273,24 @@ export async function handleAuthCallback(url: string): Promise<void> {
   const data = await response.json();
   oauthLog("handleAuthCallback: TOKEN OK, has_access_token=" + !!data.access_token + ", has_refresh=" + !!data.refresh_token);
 
+  // Google may omit refresh_token when the user re-authorizes an account. Keep
+  // the prior one so a successful re-authorization cannot turn a durable
+  // session into an access-token-only session.
+  const existingTokens = await readTokenSet();
+  const refreshToken = data.refresh_token ?? existingTokens?.refresh_token;
+  if (!refreshToken) {
+    throw new GoogleSyncError(
+      "NO_REFRESH_TOKEN",
+      "Google did not return a refresh token. Remove Dayboard from your Google Account permissions, then reconnect.",
+    );
+  }
+
   await saveTokenSet({
     access_token: data.access_token,
-    refresh_token: data.refresh_token,
+    refresh_token: refreshToken,
     expires_at: Date.now() + (data.expires_in ?? 3600) * 1000,
   });
-  oauthLog("handleAuthCallback: token_set SAVED to localStorage");
+  oauthLog("handleAuthCallback: token_set stored securely");
 }
 
 let _refreshPromise: Promise<TokenSet> | null = null;

@@ -221,6 +221,7 @@
 - 桌面运行环境以 Tauri 注入的 `__TAURI_INTERNALS__` 判断，不依赖默认关闭的 `window.isTauri` 全局标记；否则会退化为浏览器回调且不会启动本机监听。
 - access token 与 refresh token 保存在 Windows Credential Manager；检测到旧 localStorage token 时仅迁移一次并删除旧值。
 - 写入凭据后必须立即回读校验；只有 `NoEntry` 可被视为未登录，其他凭据错误需要向用户报告并允许重新连接。
+- Google 重新授权未返回 refresh token 时保留已有 refresh token；首次授权若未获得 refresh token 必须失败，不能保存只能短期使用的会话。
 - 测试期仍可保留当前 OAuth client secret 配置，但其不能作为对外发布时的保密方案。
 
 ## D017：开机启动使用 Windows 原生注册
